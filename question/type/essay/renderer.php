@@ -140,6 +140,34 @@ class qtype_essay_renderer extends qtype_renderer {
  */
 abstract class qtype_essay_format_renderer_base extends plugin_renderer_base {
     /**
+     * @return string specific class name to add to the input element.
+     */
+    protected abstract function class_name();
+
+    protected function get_count_area_read_only($qa, $response){
+        return $this->get_count_display($qa->get_question(), $response);
+    }
+
+    protected function get_count_display(qtype_essay_question $question, $response){
+        if (!$question->has_response_limit()) {
+            return '';
+        }
+
+        $count = '';
+        if ($question->wordlimit) {
+            $current = !empty($response) ? count_words($response) : 0;
+            $words = "Words: <span class='current'>$current</span> / $question->wordlimit";
+            $count .= html_writer::tag('div', $words, array('class' => 'wordcount'));
+        }
+        if ($question->charlimit) {
+            $current = !empty($response) ? strlen($response) : 0;
+            $words = "Characters: <span class='current'>$current</span> / $question->charlimit";
+            $count .= html_writer::tag('div', $words, array('class' => 'charcount'));
+        }
+        return html_writer::tag('div', $count, array('class' => 'count'));
+    }
+
+    /**
      * Render the students respone when the question is in read-only mode.
      * @param string $name the variable name this input edits.
      * @param question_attempt $qa the question attempt being display.
@@ -162,11 +190,6 @@ abstract class qtype_essay_format_renderer_base extends plugin_renderer_base {
      */
     public abstract function response_area_input($name, question_attempt $qa,
             question_attempt_step $step, $lines, $context);
-
-    /**
-     * @return string specific class name to add to the input element.
-     */
-    protected abstract function class_name();
 }
 
 
@@ -177,17 +200,22 @@ abstract class qtype_essay_format_renderer_base extends plugin_renderer_base {
  * @copyright  2011 The Open University
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class qtype_essay_format_editor_renderer extends plugin_renderer_base {
+class qtype_essay_format_editor_renderer extends qtype_essay_format_renderer_base {
     protected function class_name() {
         return 'qtype_essay_editor';
     }
 
-    public function response_area_read_only($name, $qa, $step, $lines, $context) {
-        return html_writer::tag('div', $this->prepare_response($name, $qa, $step, $context),
-                array('class' => $this->class_name() . ' qtype_essay_response readonly'));
+    public function response_area_read_only($name, question_attempt $qa, question_attempt_step $step, $lines, $context) {
+        $response  = $this->prepare_response($name, $qa, $step, $context);
+        $classes   = $this->class_name() . ' qtype_essay_response readonly';
+        $textarea  = html_writer::tag('div', $response, array('class' => $classes));
+        //TODO: Need a HTML to just plain text conversion with NO formatting in text (italics _X_)
+        $plaintext = str_replace(array("\n", "\r"), '', html_to_text($step->get_qt_var($name), 0, false));
+        $countarea = $this->get_count_area_read_only($qa, $plaintext);
+        return $textarea.$countarea;
     }
 
-    public function response_area_input($name, $qa, $step, $lines, $context) {
+    public function response_area_input($name, question_attempt $qa, question_attempt_step $step, $lines, $context) {
         global $CFG;
         require_once($CFG->dirroot . '/repository/lib.php');
 
@@ -229,6 +257,9 @@ class qtype_essay_format_editor_renderer extends plugin_renderer_base {
         $output .= $this->filepicker_html($inputname, $draftitemid);
 
         $output .= html_writer::end_tag('div');
+        $plaintext = str_replace(array("\n", "\r"), '', html_to_text($step->get_qt_var($name), 0, false));
+        $output .= $this->get_count_area_input($qa, $plaintext);
+
         return $output;
     }
 
@@ -288,6 +319,24 @@ class qtype_essay_format_editor_renderer extends plugin_renderer_base {
      */
     protected function filepicker_html($inputname, $draftitemid) {
         return '';
+    }
+
+    protected function get_count_area_input($qa, $response){
+        $question = $qa->get_question();
+        $options = $question->get_js_options();
+        $options['editorid'] = $qa->get_qt_field_name('answer').'_id';
+        $params   = array('#q'.$qa->get_slot(), $options);
+        $jsmodule = array(
+            'name'     => 'qtype_essay',
+            'fullpath' => '/question/type/essay/module.js',
+            'strings'  => array(
+                array('atlimit_help', 'qtype_essay'),
+                array('overlimit_help', 'qtype_essay'),
+            ),
+        );
+        $this->page->requires->js_init_call('M.qtype_essay.init_editor', $params, true, $jsmodule);
+
+        return $this->get_count_display($question, $response);
     }
 }
 
@@ -398,7 +447,7 @@ class qtype_essay_format_editorfilepicker_renderer extends qtype_essay_format_ed
  * @copyright  2011 The Open University
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class qtype_essay_format_plain_renderer extends plugin_renderer_base {
+class qtype_essay_format_plain_renderer extends qtype_essay_format_renderer_base {
     /**
      * @return string the HTML for the textarea.
      */
@@ -413,15 +462,43 @@ class qtype_essay_format_plain_renderer extends plugin_renderer_base {
         return 'qtype_essay_plain';
     }
 
-    public function response_area_read_only($name, $qa, $step, $lines, $context) {
-        return $this->textarea($step->get_qt_var($name), $lines, array('readonly' => 'readonly'));
+    protected function get_format_tag($inputname){
+        $attr = array('type' => 'hidden', 'name' => $inputname . 'format', 'value' => FORMAT_PLAIN);
+        return html_writer::empty_tag('input', $attr);
     }
 
-    public function response_area_input($name, $qa, $step, $lines, $context) {
+    public function response_area_read_only($name, question_attempt $qa, question_attempt_step $step, $lines, $context) {
+        $response  = $step->get_qt_var($name);
+        $textarea  = $this->textarea($response, $lines, array('readonly' => 'readonly'));
+        $countarea = $this->get_count_area_read_only($qa, $response);
+        return $textarea.$countarea;
+    }
+
+    public function response_area_input($name, question_attempt $qa, question_attempt_step $step, $lines, $context) {
+        $response  = $step->get_qt_var($name);
         $inputname = $qa->get_qt_field_name($name);
-        return $this->textarea($step->get_qt_var($name), $lines, array('name' => $inputname)) .
-                html_writer::empty_tag('input', array('type' => 'hidden',
-                    'name' => $inputname . 'format', 'value' => FORMAT_PLAIN));
+        $textarea  = $this->textarea($response, $lines, array('name' => $inputname));
+        $formattag = $this->get_format_tag($inputname);
+        $countarea = $this->get_count_area_input($qa, $response);
+
+        return $textarea.$formattag.$countarea;
+    }
+
+    protected function get_count_area_input($qa, $response){
+        $question = $qa->get_question();
+        $options  = $question->get_js_options();
+        $params   = array('#q'.$qa->get_slot(), $options);
+        $jsmodule = array(
+            'name'     => 'qtype_essay',
+            'fullpath' => '/question/type/essay/module.js',
+            'strings'  => array(
+                array('atlimit_help', 'qtype_essay'),
+                array('overlimit_help', 'qtype_essay'),
+            ),
+        );
+        $this->page->requires->js_init_call("M.qtype_essay.init_plain", $params, false, $jsmodule);
+
+        return $this->get_count_display($question, $response);
     }
 }
 

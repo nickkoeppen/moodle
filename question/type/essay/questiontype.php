@@ -36,6 +36,10 @@ require_once($CFG->libdir . '/questionlib.php');
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class qtype_essay extends question_type {
+    const LIMIT_NONE = 0;
+    const LIMIT_SOFT = 1;
+    const LIMIT_HARD = 2;
+
     public function is_manual_graded() {
         return true;
     }
@@ -68,6 +72,10 @@ class qtype_essay extends question_type {
         $options->graderinfo = $this->import_or_save_files($formdata->graderinfo,
                 $context, 'qtype_essay', 'graderinfo', $formdata->id);
         $options->graderinfoformat = $formdata->graderinfo['format'];
+        $options->responselimitpolicy = $formdata->responselimitpolicy;
+        $options->wordlimit = $formdata->wordlimit;
+        $options->charlimit = $formdata->charlimit;
+
         $DB->update_record('qtype_essay_options', $options);
     }
 
@@ -78,6 +86,9 @@ class qtype_essay extends question_type {
         $question->attachments = $questiondata->options->attachments;
         $question->graderinfo = $questiondata->options->graderinfo;
         $question->graderinfoformat = $questiondata->options->graderinfoformat;
+        $question->responselimitpolicy = $questiondata->options->responselimitpolicy;
+        $question->wordlimit = $questiondata->options->wordlimit;
+        $question->charlimit = $questiondata->options->charlimit;
     }
 
     /**
@@ -86,10 +97,21 @@ class qtype_essay extends question_type {
      */
     public function response_formats() {
         return array(
-            'editor' => get_string('formateditor', 'qtype_essay'),
+            'editor'           => get_string('formateditor', 'qtype_essay'),
             'editorfilepicker' => get_string('formateditorfilepicker', 'qtype_essay'),
-            'plain' => get_string('formatplain', 'qtype_essay'),
-            'monospaced' => get_string('formatmonospaced', 'qtype_essay'),
+            'plain'            => get_string('formatplain', 'qtype_essay'),
+            'monospaced'       => get_string('formatmonospaced', 'qtype_essay'),
+        );
+    }
+
+    /**
+     * @return array the choices that should be offered for the word count policy.
+     */
+    public function response_limit_policies(){
+        return array(
+            self::LIMIT_NONE => get_string('unlimited'),
+            self::LIMIT_SOFT => get_string('responselimitsoft', 'qtype_essay'),
+            self::LIMIT_HARD => get_string('responselimithard', 'qtype_essay'),
         );
     }
 

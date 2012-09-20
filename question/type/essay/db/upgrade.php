@@ -40,5 +40,18 @@ function xmldb_qtype_essay_upgrade($oldversion) {
     // Moodle v2.2.0 release upgrade line
     // Put any upgrade step following this
 
+    // Add reponse limit functionality
+    if ($oldversion < 2012053100) {
+        $table = new xmldb_table('qtype_essay_options');
+        $field = new xmldb_field('responselimitpolicy', XMLDB_TYPE_INTEGER, '4', null, true, false, 0, 'graderinfoformat');
+        $dbman->add_field($table, $field);
+        $field = new xmldb_field('wordlimit', XMLDB_TYPE_INTEGER, '4', null, false, false, null, 'responselimitpolicy');
+        $dbman->add_field($table, $field);
+        $field = new xmldb_field('charlimit', XMLDB_TYPE_INTEGER, '4', null, false, false, null, 'wordlimit');
+        $dbman->add_field($table, $field);
+
+        upgrade_plugin_savepoint(true, 2012053100, 'qtype', 'essay');
+    }
+
     return true;
 }

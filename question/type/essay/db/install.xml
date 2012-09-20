@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="question/type/essay/db" VERSION="20120122" COMMENT="XMLDB file for Moodle question/type/essay"
+<XMLDB PATH="question/type/essay/db" VERSION="2012053100" COMMENT="XMLDB file for Moodle question/type/essay"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:noNamespaceSchemaLocation="../../../../lib/xmldb/xmldb.xsd"
 >
@@ -12,7 +12,10 @@
         <FIELD NAME="responsefieldlines" TYPE="int" LENGTH="4" NOTNULL="true" DEFAULT="15" SEQUENCE="false" COMMENT="Approximate height, in lines, of the input box the students should be given for their response." PREVIOUS="responseformat" NEXT="attachments"/>
         <FIELD NAME="attachments" TYPE="int" LENGTH="4" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Whether, and how many, attachments a student is allowed to include with their response. -1 means unlimited." PREVIOUS="responsefieldlines" NEXT="graderinfo"/>
         <FIELD NAME="graderinfo" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Information shown to people with permission to manually grade the question, when they are grading." PREVIOUS="attachments" NEXT="graderinfoformat"/>
-        <FIELD NAME="graderinfoformat" TYPE="int" LENGTH="4" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="The text format for graderinfo." PREVIOUS="graderinfo"/>
+        <FIELD NAME="graderinfoformat" TYPE="int" LENGTH="4" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="The text format for graderinfo." PREVIOUS="graderinfo" NEXT="responselimitpolicy"/>
+        <FIELD NAME="responselimitpolicy" TYPE="int" LENGTH="4" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Response limit policy" PREVIOUS="graderinfoformat" NEXT="wordlimit"/>
+        <FIELD NAME="wordlimit" TYPE="int" LENGTH="4" NOTNULL="false" SEQUENCE="false" COMMENT="Word limit" PREVIOUS="responselimitpolicy" NEXT="charlimit"/>
+        <FIELD NAME="charlimit" TYPE="int" LENGTH="4" NOTNULL="false" SEQUENCE="false" COMMENT="Character limit" PREVIOUS="wordlimit"/>
       </FIELDS>
       <KEYS>
         <KEY NAME="primary" TYPE="primary" FIELDS="id" NEXT="questionid"/>

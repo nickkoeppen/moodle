@@ -39,6 +39,9 @@ class qtype_essay_question extends question_with_responses {
     public $attachments;
     public $graderinfo;
     public $graderinfoformat;
+    public $responselimitpolicy;
+    public $wordlimit;
+    public $charlimit;
 
     public function make_behaviour(question_attempt $qa, $preferredbehaviour) {
         question_engine::load_behaviour_class('manualgraded');
@@ -81,6 +84,15 @@ class qtype_essay_question extends question_with_responses {
         return null;
     }
 
+    public function get_js_options(){
+        return array(
+            'block'     => ($this->responselimitpolicy == qtype_essay::LIMIT_HARD),
+            'charlimit' => $this->charlimit,
+            'qid'       => $this->id,
+            'wordlimit' => $this->wordlimit,
+        );
+    }
+
     public function is_complete_response(array $response) {
         return !empty($response['answer']);
     }
@@ -108,5 +120,9 @@ class qtype_essay_question extends question_with_responses {
             return parent::check_file_access($qa, $options, $component,
                     $filearea, $args, $forcedownload);
         }
+    }
+
+    public function has_response_limit(){
+        return !empty($this->responselimitpolicy);
     }
 }

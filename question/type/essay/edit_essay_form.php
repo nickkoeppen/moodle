@@ -38,6 +38,11 @@ class qtype_essay_edit_form extends question_edit_form {
     protected function definition_inner($mform) {
         $qtype = question_bank::get_qtype('essay');
 
+        $mform->addElement('editor', 'graderinfo', get_string('graderinfo', 'qtype_essay'),
+                array('rows' => 10), $this->editoroptions);
+
+        $mform->addElement('header', 'responseheader', get_string('responseheader', 'qtype_essay'));
+
         $mform->addElement('select', 'responseformat',
                 get_string('responseformat', 'qtype_essay'), $qtype->response_formats());
         $mform->setDefault('responseformat', 'editor');
@@ -50,8 +55,17 @@ class qtype_essay_edit_form extends question_edit_form {
                 get_string('allowattachments', 'qtype_essay'), $qtype->attachment_options());
         $mform->setDefault('attachments', 0);
 
-        $mform->addElement('editor', 'graderinfo', get_string('graderinfo', 'qtype_essay'),
-                array('rows' => 10), $this->editoroptions);
+        $mform->addElement('select', 'responselimitpolicy',
+                get_string('responselimitpolicy', 'qtype_essay'), $qtype->response_limit_policies());
+        $mform->addHelpButton('responselimitpolicy', 'responselimitpolicy', 'qtype_essay');
+
+        $mform->addElement('text', 'wordlimit', get_string('wordlimit', 'qtype_essay'), array('size' => 3));
+        $mform->disabledIf('wordlimit', 'responselimitpolicy', 'eq', 0);
+        $mform->setType('wordlimit', PARAM_INT);
+
+        $mform->addElement('text', 'charlimit', get_string('charlimit', 'qtype_essay'), array('size' => 3));
+        $mform->disabledIf('charlimit', 'responselimitpolicy', 'eq', 0);
+        $mform->setType('charlimit', PARAM_INT);
     }
 
     protected function data_preprocessing($question) {
@@ -78,6 +92,9 @@ class qtype_essay_edit_form extends question_edit_form {
         );
         $question->graderinfo['format'] = $question->options->graderinfoformat;
         $question->graderinfo['itemid'] = $draftid;
+        $question->responselimitpolicy = $question->options->responselimitpolicy;
+        $question->wordlimit = $question->options->wordlimit;
+        $question->charlimit = $question->options->charlimit;
 
         return $question;
     }

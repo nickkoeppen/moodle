@@ -2,12 +2,12 @@
     width: 100%;
 }
 .que.essay textarea.qtype_essay_response.qtype_essay_plain {
-    white-space: pre-wrap;
     font: inherit;
+    white-space: pre-wrap;
 }
 .que.essay textarea.qtype_essay_response.qtype_essay_monospaced {
-    white-space: pre;
     font-family: Andale Mono, Monaco, Courier New, DejaVu Sans Mono, monospace;
+    white-space: pre;
 }
 .que.essay .qtype_essay_response {
     min-height: 3em;
@@ -17,4 +17,19 @@
 }
 .que.essay div.qtype_essay_response textarea {
     width: 100%;
+}
+.que.essay .wordcount,
+.que.essay .charcount {
+	text-align: right;
+}
+.que.essay span.current {
+	font-weight: bold;
+}
+.que.essay span.current.atlimit {
+	text-decoration: blink;
+}
+.que.essay span.current.overlimit {
+	border-bottom: thin dotted;
+	color: red;
+	font-style: italic;
 }
