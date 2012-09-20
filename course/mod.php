@@ -28,7 +28,7 @@ require_once("lib.php");
 
 $sectionreturn = optional_param('sr', 0, PARAM_INT);
 $add           = optional_param('add', '', PARAM_ALPHA);
-$type          = optional_param('type', '', PARAM_ALPHA);
+$type          = optional_param('type', '', PARAM_ALPHANUMEXT);
 $indent        = optional_param('indent', 0, PARAM_INT);
 $update        = optional_param('update', 0, PARAM_INT);
 $duplicate     = optional_param('duplicate', 0, PARAM_INT);
@@ -70,7 +70,7 @@ require_login();
 if (!empty($add)) {
     $id          = required_param('id', PARAM_INT);
     $section     = required_param('section', PARAM_INT);
-    $type        = optional_param('type', '', PARAM_ALPHA);
+    $type        = optional_param('type', '', PARAM_ALPHANUMEXT);
     $returntomod = optional_param('return', 0, PARAM_BOOL);
 
     redirect("$CFG->wwwroot/course/modedit.php?add=$add&type=$type&course=$id&section=$section&return=$returntomod");
