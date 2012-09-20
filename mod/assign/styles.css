@@ -21,10 +21,11 @@ div.gradingsummary .generaltable {
     width: 100%;
 }
 
+#page-mod-assign-view table.generaltable table td { border: 0px none; }
+
 .gradingsummarytable,
 .feedbacktable,
 .lockedsubmission,
-.gradingbatchoperationsform,
 .submissionsummarytable {
     margin-top: 1em;
 }
@@ -39,9 +40,10 @@ div.submissionsummarytable table tbody tr td.c0 {
     font-weight: 900;
 }
 
-.jsenabled .gradingactionsform .hidden {display: none;}
-.jsenabled .gradingoptionsform .hidden {display: none;}
+.jsenabled .gradingoptionsform .fsubmit {display: none;}
 .jsenabled .gradingtable .c1 select {display: none;}
+.quickgradingform .mform fieldset { margin: 0px; padding: 0px; }
+.gradingbatchoperationsform .mform fieldset { margin: 0px; padding: 0px; }
 
 td.submissionstatus,
 div.submissionstatus,
@@ -127,4 +129,8 @@ div.earlysubmission {
 
 #page-mod-assign-view div.gradingtable tr .quickgrademodified {
     background-color: #FFCC99;
+}
+
+td.submissioneditable {
+    color: red;
 }

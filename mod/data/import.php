@@ -62,7 +62,7 @@ if ($id) {
 
 require_login($course, false, $cm);
 
-$context = get_context_instance(CONTEXT_MODULE, $cm->id);
+$context = context_module::instance($cm->id);
 require_capability('mod/data:manageentries', $context);
 $form = new mod_data_import_form(new moodle_url('/mod/data/import.php'));
 
@@ -100,7 +100,9 @@ if (!$formdata = $form->get_data()) {
     $iid = csv_import_reader::get_new_iid('moddata');
     $cir = new csv_import_reader($iid, 'moddata');
 
-    $readcount = $cir->load_csv_content($form->get_file_content('recordsfile'), $formdata->encoding, $formdata->fielddelimiter);
+    $filecontent = $form->get_file_content('recordsfile');
+    $readcount = $cir->load_csv_content($filecontent, $formdata->encoding, $formdata->fielddelimiter);
+    unset($filecontent);
     if (empty($readcount)) {
         print_error('csvfailed','data',"{$CFG->wwwroot}/mod/data/edit.php?d={$data->id}");
     } else {

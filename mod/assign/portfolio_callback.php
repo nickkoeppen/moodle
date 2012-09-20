@@ -45,6 +45,9 @@ class assign_portfolio_caller extends portfolio_module_caller_base {
     /** @var int callback arg - the id of submission we export */
     protected $sid;
 
+    /** @var string component of the submission files we export*/
+    protected $component;
+
     /** @var string callback arg - the area of submission files we export */
     protected $area;
 
@@ -60,7 +63,6 @@ class assign_portfolio_caller extends portfolio_module_caller_base {
     /** @var string callback arg - the name of the editor field we export */
     protected $editor;
 
-
    /**
     * callback arg for a single file export
     */
@@ -69,6 +71,7 @@ class assign_portfolio_caller extends portfolio_module_caller_base {
             'cmid' => true,
             'sid' => false,
             'area' => false,
+            'component' => false,
             'fileid' => false,
             'plugin' => false,
             'editor' => false,
@@ -105,11 +108,10 @@ class assign_portfolio_caller extends portfolio_module_caller_base {
 
         }
 
-
         // export either an area of files or a single file (see function for more detail)
         // the first arg is an id or null. If it is an id, the rest of the args are ignored
         // if it is null, the rest of the args are used to load a list of files from get_areafiles
-        $this->set_file_and_format_data($this->fileid, $context->id, 'mod_assign', $this->area, $this->sid, 'timemodified', false);
+        $this->set_file_and_format_data($this->fileid, $context->id, $this->component, $this->area, $this->sid, 'timemodified', false);
 
     }
 

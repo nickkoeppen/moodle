@@ -23,6 +23,7 @@
 
 require_once($CFG->dirroot . '/mod/data/lib.php');
 require_once($CFG->libdir . '/portfolio/caller.php');
+require_once($CFG->libdir . '/filelib.php');
 
 /**
  * The class to handle entry exports of a database module
@@ -100,7 +101,7 @@ class data_portfolio_caller extends portfolio_module_caller_base {
             $this->records[] = $tmp;
         } else {
             $where = array('dataid' => $this->data->id);
-            if (!has_capability('mod/data:exportallentries', get_context_instance(CONTEXT_MODULE, $this->cm->id))) {
+            if (!has_capability('mod/data:exportallentries', context_module::instance($this->cm->id))) {
                 $where['userid'] = $USER->id; // get them all in case, we'll unset ones that aren't ours later if necessary
             }
             $tmp = $DB->get_records('data_records', $where);
@@ -149,7 +150,8 @@ class data_portfolio_caller extends portfolio_module_caller_base {
         foreach ($this->records as $record) {
             foreach ($record as $data) {
                 if (is_array($data) || is_object($data)) {
-                    $testkey = array_pop(array_keys($data));
+                    $keys = array_keys($data);
+                    $testkey = array_pop($keys);
                     if (is_array($data[$testkey]) || is_object($data[$testkey])) {
                         foreach ($data as $d) {
                             $str .= implode(',', (array)$d);
@@ -239,14 +241,14 @@ class data_portfolio_caller extends portfolio_module_caller_base {
     public function check_permissions() {
         if ($this->recordid) {
             if (data_isowner($this->recordid)) {
-                return has_capability('mod/data:exportownentry', get_context_instance(CONTEXT_MODULE, $this->cm->id));
+                return has_capability('mod/data:exportownentry', context_module::instance($this->cm->id));
             }
-            return has_capability('mod/data:exportentry', get_context_instance(CONTEXT_MODULE, $this->cm->id));
+            return has_capability('mod/data:exportentry', context_module::instance($this->cm->id));
         }
         if ($this->has_export_config() && !$this->get_export_config('mineonly')) {
-            return has_capability('mod/data:exportallentries', get_context_instance(CONTEXT_MODULE, $this->cm->id));
+            return has_capability('mod/data:exportallentries', context_module::instance($this->cm->id));
         }
-        return has_capability('mod/data:exportownentry', get_context_instance(CONTEXT_MODULE, $this->cm->id));
+        return has_capability('mod/data:exportownentry', context_module::instance($this->cm->id));
     }
 
     /**
@@ -282,7 +284,6 @@ class data_portfolio_caller extends portfolio_module_caller_base {
     // Replacing tags
         $patterns = array();
         $replacement = array();
-        $context = get_context_instance(CONTEXT_MODULE, $this->cm->id);
 
         $files = array();
     // Then we generate strings to replace for normal tags
@@ -383,7 +384,7 @@ class data_portfolio_caller extends portfolio_module_caller_base {
         return (empty($this->recordid) // multi-entry export
             && $this->minecount > 0    // some of them are mine
             && $this->minecount != count($this->records) // not all of them are mine
-            && has_capability('mod/data:exportallentries', get_context_instance(CONTEXT_MODULE, $this->cm->id))); // they actually have a choice in the matter
+            && has_capability('mod/data:exportallentries', context_module::instance($this->cm->id))); // they actually have a choice in the matter
     }
 
     public function export_config_form(&$mform, $instance) {

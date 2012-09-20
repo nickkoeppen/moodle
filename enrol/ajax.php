@@ -35,12 +35,12 @@ require_once("$CFG->dirroot/group/lib.php");
 
 // Must have the sesskey
 $id      = required_param('id', PARAM_INT); // course id
-$action  = required_param('action', PARAM_ACTION);
+$action  = required_param('action', PARAM_ALPHANUMEXT);
 
 $PAGE->set_url(new moodle_url('/enrol/ajax.php', array('id'=>$id, 'action'=>$action)));
 
 $course = $DB->get_record('course', array('id'=>$id), '*', MUST_EXIST);
-$context = get_context_instance(CONTEXT_COURSE, $course->id, MUST_EXIST);
+$context = context_course::instance($course->id, MUST_EXIST);
 
 if ($course->id == SITEID) {
     throw new moodle_exception('invalidcourse');
@@ -63,7 +63,7 @@ switch ($action) {
     case 'unenrol':
         $ue = $DB->get_record('user_enrolments', array('id'=>required_param('ue', PARAM_INT)), '*', MUST_EXIST);
         list ($instance, $plugin) = $manager->get_user_enrolment_components($ue);
-        if (!$instance || !$plugin || !$plugin->allow_unenrol_user($instance, $ue) || !has_capability("enrol/$instance->enrol:unenrol", $manager->get_context()) || !$manager->unenrol_user($ue)) {
+        if (!$instance || !$plugin || !enrol_is_enabled($instance->enrol) || !$plugin->allow_unenrol_user($instance, $ue) || !has_capability("enrol/$instance->enrol:unenrol", $manager->get_context()) || !$manager->unenrol_user($ue)) {
             throw new enrol_ajax_exception('unenrolnotpermitted');
         }
         break;

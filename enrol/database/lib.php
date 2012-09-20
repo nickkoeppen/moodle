@@ -214,7 +214,7 @@ class enrol_database_plugin extends enrol_plugin {
                 $this->enrol_user($instance, $user->id, $roleid, 0, 0, ENROL_USER_ACTIVE);
             }
 
-            if (!$context = get_context_instance(CONTEXT_COURSE, $instance->courseid)) {
+            if (!$context = context_course::instance($instance->courseid, IGNORE_MISSING)) {
                 //weird
                 continue;
             }
@@ -247,7 +247,7 @@ class enrol_database_plugin extends enrol_plugin {
                 continue;
             }
 
-            if (!$context = get_context_instance(CONTEXT_COURSE, $instance->courseid)) {
+            if (!$context = context_course::instance($instance->courseid, IGNORE_MISSING)) {
                 //weird
                 continue;
             }
@@ -368,6 +368,7 @@ class enrol_database_plugin extends enrol_plugin {
                 continue;
             }
             $existing[$course->mapping] = $course;
+            unset($externalcourses[$course->mapping]);
         }
         $rs->close();
 
@@ -388,17 +389,21 @@ class enrol_database_plugin extends enrol_plugin {
                 continue;
             }
             if (!isset($externalcourses[$course->mapping])) {
-                // course not synced
-                continue;
-            }
-            if (isset($existing[$course->mapping])) {
-                // some duplicate, sorry
+                // Course not synced or duplicate.
                 continue;
             }
             $course->enrolid = $this->add_instance($course);
             $existing[$course->mapping] = $course;
+            unset($externalcourses[$course->mapping]);
         }
         $rs->close();
+
+        // Print list of missing courses.
+        if ($verbose and $externalcourses) {
+            $list = implode(', ', array_keys($externalcourses));
+            mtrace("  error: following courses do not exist - $list");
+            unset($list);
+        }
 
         // free memory
         unset($externalcourses);
@@ -416,7 +421,7 @@ class enrol_database_plugin extends enrol_plugin {
             if (!$instance = $DB->get_record('enrol', array('id'=>$course->enrolid))) {
                 continue; //weird
             }
-            $context = get_context_instance(CONTEXT_COURSE, $course->id);
+            $context = context_course::instance($course->id);
 
             // get current list of enrolled users with their roles
             $current_roles  = array();
@@ -445,19 +450,25 @@ class enrol_database_plugin extends enrol_plugin {
             $sql = $this->db_get_sql($table, array($coursefield=>$course->mapping), $sqlfields);
             if ($rs = $extdb->Execute($sql)) {
                 if (!$rs->EOF) {
+                    $usersearch = array('deleted' => 0);
                     if ($localuserfield === 'username') {
-                        $usersearch = array('mnethostid'=>$CFG->mnet_localhost_id, 'deleted' =>0);
+                        $usersearch['mnethostid'] = $CFG->mnet_localhost_id;
                     }
                     while ($fields = $rs->FetchRow()) {
                         $fields = array_change_key_case($fields, CASE_LOWER);
                         if (empty($fields[$userfield])) {
-                            //user identification is mandatory!
+                            if ($verbose) {
+                                mtrace("  error: skipping user without mandatory $localuserfield in course '$course->mapping'");
+                            }
+                            continue;
                         }
                         $mapping = $fields[$userfield];
                         if (!isset($user_mapping[$mapping])) {
                             $usersearch[$localuserfield] = $mapping;
                             if (!$user = $DB->get_record('user', $usersearch, 'id', IGNORE_MULTIPLE)) {
-                                // user does not exist or was deleted
+                                if ($verbose) {
+                                    mtrace("  error: skipping unknown user $localuserfield '$mapping' in course '$course->mapping'");
+                                }
                                 continue;
                             }
                             $user_mapping[$mapping] = $user->id;
@@ -467,7 +478,9 @@ class enrol_database_plugin extends enrol_plugin {
                         }
                         if (empty($fields[$rolefield]) or !isset($roles[$fields[$rolefield]])) {
                             if (!$defaultrole) {
-                                // role is mandatory
+                                if ($verbose) {
+                                    mtrace("  error: skipping user '$userid' in course '$course->mapping' - missing course and default role");
+                                }
                                 continue;
                             }
                             $roleid = $defaultrole;

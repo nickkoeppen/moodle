@@ -30,8 +30,6 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-require_once($CFG->libdir.'/filelib.php');  // curl class needed here
-
 /**
  * Singleton class providing general plugins management functionality
  */
@@ -100,6 +98,16 @@ class plugin_manager {
         global $CFG;
 
         if ($disablecache or is_null($this->pluginsinfo)) {
+            // Hack: include mod and editor subplugin management classes first,
+            //       the adminlib.php is supposed to contain extra admin settings too.
+            require_once($CFG->libdir.'/adminlib.php');
+            foreach(array('mod', 'editor') as $type) {
+                foreach (get_plugin_list($type) as $dir) {
+                    if (file_exists("$dir/adminlib.php")) {
+                        include_once("$dir/adminlib.php");
+                    }
+                }
+            }
             $this->pluginsinfo = array();
             $plugintypes = get_plugin_types();
             $plugintypes = $this->reorder_plugin_types($plugintypes);
@@ -137,7 +145,7 @@ class plugin_manager {
      * Returns list of plugins that define their subplugins and the information
      * about them from the db/subplugins.php file.
      *
-     * At the moment, only activity modules can define subplugins.
+     * At the moment, only activity modules and editors can define subplugins.
      *
      * @param bool $disablecache force reload, cache can be used otherwise
      * @return array with keys like 'mod_quiz', and values the data from the
@@ -147,18 +155,21 @@ class plugin_manager {
 
         if ($disablecache or is_null($this->subpluginsinfo)) {
             $this->subpluginsinfo = array();
-            $mods = get_plugin_list('mod');
-            foreach ($mods as $mod => $moddir) {
-                $modsubplugins = array();
-                if (file_exists($moddir . '/db/subplugins.php')) {
-                    include($moddir . '/db/subplugins.php');
-                    foreach ($subplugins as $subplugintype => $subplugintyperootdir) {
-                        $subplugin = new stdClass();
-                        $subplugin->type = $subplugintype;
-                        $subplugin->typerootdir = $subplugintyperootdir;
-                        $modsubplugins[$subplugintype] = $subplugin;
+            foreach (array('mod', 'editor') as $type) {
+                $owners = get_plugin_list($type);
+                foreach ($owners as $component => $ownerdir) {
+                    $componentsubplugins = array();
+                    if (file_exists($ownerdir . '/db/subplugins.php')) {
+                        $subplugins = array();
+                        include($ownerdir . '/db/subplugins.php');
+                        foreach ($subplugins as $subplugintype => $subplugintyperootdir) {
+                            $subplugin = new stdClass();
+                            $subplugin->type = $subplugintype;
+                            $subplugin->typerootdir = $subplugintyperootdir;
+                            $componentsubplugins[$subplugintype] = $subplugin;
+                        }
+                        $this->subpluginsinfo[$type . '_' . $component] = $componentsubplugins;
                     }
-                $this->subpluginsinfo['mod_' . $mod] = $modsubplugins;
                 }
             }
         }
@@ -280,25 +291,35 @@ class plugin_manager {
     }
 
     /**
-     * Checks all dependencies for all installed plugins. Used by install and upgrade.
+     * Checks all dependencies for all installed plugins
+     *
+     * This is used by install and upgrade. The array passed by reference as the second
+     * argument is populated with the list of plugins that have failed dependencies (note that
+     * a single plugin can appear multiple times in the $failedplugins).
+     *
      * @param int $moodleversion the version from version.php.
+     * @param array $failedplugins to return the list of plugins with non-satisfied dependencies
      * @return bool true if all the dependencies are satisfied for all plugins.
      */
-    public function all_plugins_ok($moodleversion) {
+    public function all_plugins_ok($moodleversion, &$failedplugins = array()) {
+
+        $return = true;
         foreach ($this->get_plugins() as $type => $plugins) {
             foreach ($plugins as $plugin) {
 
-                if (!empty($plugin->versionrequires) && $plugin->versionrequires > $moodleversion) {
-                    return false;
+                if (!$plugin->is_core_dependency_satisfied($moodleversion)) {
+                    $return = false;
+                    $failedplugins[] = $plugin->component;
                 }
 
                 if (!$this->are_dependencies_satisfied($plugin->get_other_required_plugins())) {
-                    return false;
+                    $return = false;
+                    $failedplugins[] = $plugin->component;
                 }
             }
         }
 
-        return true;
+        return $return;
     }
 
     /**
@@ -357,7 +378,7 @@ class plugin_manager {
             ),
 
             'assignfeedback' => array(
-                'comments', 'file'
+                'comments', 'file', 'offline'
             ),
 
             'auth' => array(
@@ -496,7 +517,7 @@ class plugin_manager {
             ),
 
             'repository' => array(
-                'alfresco', 'boxnet', 'coursefiles', 'dropbox', 'filesystem',
+                'alfresco', 'boxnet', 'coursefiles', 'dropbox', 'equella', 'filesystem',
                 'flickr', 'flickr_public', 'googledocs', 'local', 'merlot',
                 'picasa', 'recent', 's3', 'upload', 'url', 'user', 'webdav',
                 'wikimedia', 'youtube'
@@ -508,6 +529,10 @@ class plugin_manager {
                 'graphs'
             ),
 
+            'tinymce' => array(
+                'dragmath', 'moodleemoticon', 'moodleimage', 'moodlemedia', 'moodlenolink', 'spellchecker',
+            ),
+
             'theme' => array(
                 'afterburner', 'anomaly', 'arialist', 'base', 'binarius',
                 'boxxie', 'brick', 'canvas', 'formal_white', 'formfactor',
@@ -517,7 +542,7 @@ class plugin_manager {
             ),
 
             'tool' => array(
-                'assignmentupgrade', 'bloglevelupgrade', 'capability', 'customlang', 'dbtransfer', 'generator',
+                'assignmentupgrade', 'capability', 'customlang', 'dbtransfer', 'generator',
                 'health', 'innodb', 'langimport', 'multilangupgrade', 'phpunit', 'profiling',
                 'qeupgradehelper', 'replace', 'spamcleaner', 'timezoneimport', 'unittest',
                 'uploaduser', 'unsuproles', 'xmldb'
@@ -769,6 +794,9 @@ class available_update_checker {
      * @throws available_update_checker_exception
      */
     protected function get_response() {
+        global $CFG;
+        require_once($CFG->libdir.'/filelib.php');
+
         $curl = new curl(array('proxy' => true));
         $response = $curl->post($this->prepare_request_url(), $this->prepare_request_params());
         $curlinfo = $curl->get_info();
@@ -801,7 +829,7 @@ class available_update_checker {
         }
 
         if (empty($response['forbranch']) or $response['forbranch'] !== moodle_major_version(true)) {
-            throw new available_update_checker_exception('err_response_target_version', $response['target']);
+            throw new available_update_checker_exception('err_response_target_version', $response['forbranch']);
         }
     }
 
@@ -833,6 +861,11 @@ class available_update_checker {
     /**
      * Loads the most recent raw response record we have fetched
      *
+     * After this method is called, $this->recentresponse is set to an array. If the
+     * array is empty, then either no data have been fetched yet or the fetched data
+     * do not have expected format (and thence they are ignored and a debugging
+     * message is displayed).
+     *
      * This implementation uses the config_plugins table as the permanent storage.
      *
      * @param bool $forcereload reload even if it was already loaded
@@ -852,7 +885,8 @@ class available_update_checker {
                 $this->recentfetch = $config->recentfetch;
                 $this->recentresponse = $this->decode_response($config->recentresponse);
             } catch (available_update_checker_exception $e) {
-                // do not set recentresponse if the validation fails
+                debugging('Invalid info about available updates detected and will be ignored: '.$e->getMessage(), DEBUG_ALL);
+                $this->recentresponse = array();
             }
 
         } else {
@@ -944,6 +978,9 @@ class available_update_checker {
             // nothing to do
             return;
         }
+
+        $version = null;
+        $release = null;
 
         require($CFG->dirroot.'/version.php');
         $this->currentversion = $version;
@@ -1054,7 +1091,7 @@ class available_update_checker {
             return true;
         }
 
-        if ($now - $recent > HOURSECS) {
+        if ($now - $recent > 24 * HOURSECS) {
             return false;
         }
 
@@ -1608,6 +1645,22 @@ abstract class plugininfo_base {
      */
     public function is_standard() {
         return $this->source === plugin_manager::PLUGIN_SOURCE_STANDARD;
+    }
+
+    /**
+     * Returns true if the the given Moodle version is enough to run this plugin
+     *
+     * @param string|int|double $moodleversion
+     * @return bool
+     */
+    public function is_core_dependency_satisfied($moodleversion) {
+
+        if (empty($this->versionrequires)) {
+            return true;
+
+        } else {
+            return (double)$this->versionrequires <= (double)$moodleversion;
+        }
     }
 
     /**

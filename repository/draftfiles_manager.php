@@ -63,7 +63,7 @@ $newfilename = optional_param('newfilename', '',   PARAM_FILE);
 $draftpath   = optional_param('draftpath', '/',    PARAM_PATH);
 
 // user context
-$user_context = get_context_instance(CONTEXT_USER, $USER->id);
+$user_context = context_user::instance($USER->id);
 
 
 $PAGE->set_context($user_context);
@@ -333,7 +333,8 @@ default:
 
                 $home_url->param('action', 'browse');
                 $home_url->param('draftpath', $file->filepath);
-                $foldername = trim(array_pop(explode('/', trim($file->filepath, '/'))), '/');
+                $filepathchunks = explode('/', trim($file->filepath, '/'));
+                $foldername = trim(array_pop($filepathchunks), '/');
                 echo html_writer::link($home_url, $foldername);
 
                 $home_url->param('draftpath', $file->filepath);

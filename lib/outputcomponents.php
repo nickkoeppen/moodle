@@ -92,7 +92,7 @@ class file_picker implements renderable {
         $options->currentfile = '';
         if (!empty($options->itemid)) {
             $fs = get_file_storage();
-            $usercontext = get_context_instance(CONTEXT_USER, $USER->id);
+            $usercontext = context_user::instance($USER->id);
             if (empty($options->filename)) {
                 if ($files = $fs->get_area_files($usercontext->id, 'user', 'draft', $options->itemid, 'id DESC', false)) {
                     $file = reset($files);
@@ -321,6 +321,9 @@ class user_picture implements renderable {
         } else if ($this->size === true or $this->size == 1) {
             $filename = 'f1';
             $size = 100;
+        } else if ($this->size > 100) {
+            $filename = 'f3';
+            $size = (int)$this->size;
         } else if ($this->size >= 50) {
             $filename = 'f1';
             $size = (int)$this->size;
@@ -712,6 +715,11 @@ class single_select implements renderable {
     var $label = '';
 
     /**
+     * @var array Button label's attributes
+     */
+    var $labelattributes = array();
+
+    /**
      * @var string Form submit method post or get
      */
     var $method = 'get';
@@ -803,9 +811,12 @@ class single_select implements renderable {
      * Sets select's label
      *
      * @param string $label
+     * @param array $attributes (optional)
      */
-    public function set_label($label) {
+    public function set_label($label, $attributes = array()) {
         $this->label = $label;
+        $this->labelattributes = $attributes;
+
     }
 }
 
@@ -846,6 +857,11 @@ class url_select implements renderable {
      * @var string Button label
      */
     var $label = '';
+
+    /**
+     * @var array Button label's attributes
+     */
+    var $labelattributes = array();
 
     /**
      * @var string Wrapping div class
@@ -919,9 +935,11 @@ class url_select implements renderable {
      * Sets select's label
      *
      * @param string $label
+     * @param array $attributes (optional)
      */
-    public function set_label($label) {
+    public function set_label($label, $attributes = array()) {
         $this->label = $label;
+        $this->labelattributes = $attributes;
     }
 }
 
@@ -1574,9 +1592,10 @@ class html_writer {
                     if (!($row instanceof html_table_row)) {
                         $newrow = new html_table_row();
 
-                        foreach ($row as $item) {
-                            $cell = new html_table_cell();
-                            $cell->text = $item;
+                        foreach ($row as $cell) {
+                            if (!($cell instanceof html_table_cell)) {
+                                $cell = new html_table_cell($cell);
+                            }
                             $newrow->cells[] = $cell;
                         }
                         $row = $newrow;

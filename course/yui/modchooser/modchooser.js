@@ -2,7 +2,7 @@ YUI.add('moodle-course-modchooser', function(Y) {
     var CSS = {
         PAGECONTENT : 'div#page-content',
         SECTION : 'li.section',
-        SECTIONMODCHOOSER : 'a.section-modchooser-link',
+        SECTIONMODCHOOSER : 'span.section-modchooser-link',
         SITEMENU : 'div.block_site_main_menu',
         SITETOPIC : 'div.sitetopic'
     };
@@ -21,15 +21,12 @@ YUI.add('moodle-course-modchooser', function(Y) {
         jumplink : null,
 
         initializer : function(config) {
-            var dialogue = Y.one('#chooserdialogue');
-            var header = Y.one('#choosertitle');
+            var dialogue = Y.one('.chooserdialoguebody');
+            var header = Y.one('.choosertitle');
             var params = {
                 width: '540px'
             };
             this.setup_chooser_dialogue(dialogue, header, params);
-            this.overlay.get('boundingBox').addClass('modchooser');
-
-            this.jumplink = this.container.one('#jump');
 
             // Initialize existing sections and register for dynamically created sections
             this.setup_for_section();
@@ -82,26 +79,30 @@ YUI.add('moodle-course-modchooser', function(Y) {
 
             // Setup for site topics
             Y.one(baseselector).all(CSS.SITETOPIC).each(function(section) {
-                // The site topic has a sectionid of 1
-                this._setup_for_section(section, 1);
-            }, this);
-
-            // Setup for the site menu
-            Y.one(baseselector).all(CSS.SITEMENU).each(function(section) {
-                // The site menu has a sectionid of 0
-                this._setup_for_section(section, 0);
+                this._setup_for_section(section);
             }, this);
 
             // Setup for standard course topics
             Y.one(baseselector).all(CSS.SECTION).each(function(section) {
-                // Determine the sectionid for this section
-                var sectionid = section.get('id').replace('section-', '');
-                this._setup_for_section(section, sectionid);
+                this._setup_for_section(section);
+            }, this);
+
+            // Setup for the block site menu
+            Y.one(baseselector).all(CSS.SITEMENU).each(function(section) {
+                this._setup_for_section(section);
             }, this);
         },
         _setup_for_section : function(section, sectionid) {
-            var chooserlink = section.one(CSS.SECTIONMODCHOOSER);
-            chooserlink.on('click', this.display_mod_chooser, this, sectionid);
+            var chooserspan = section.one(CSS.SECTIONMODCHOOSER);
+            if (!chooserspan) {
+                return;
+            }
+            var chooserlink = Y.Node.create("<a href='#' />");
+            chooserspan.get('children').each(function(node) {
+                chooserlink.appendChild(node);
+            });
+            chooserspan.insertBefore(chooserlink);
+            chooserlink.on('click', this.display_mod_chooser, this);
         },
         /**
          * Display the module chooser
@@ -110,9 +111,18 @@ YUI.add('moodle-course-modchooser', function(Y) {
          * @param secitonid integer The ID of the section triggering the dialogue
          * @return void
          */
-        display_mod_chooser : function (e, sectionid) {
+        display_mod_chooser : function (e) {
             // Set the section for this version of the dialogue
-            this.sectionid = sectionid;
+            if (e.target.ancestor(CSS.SITETOPIC)) {
+                // The site topic has a sectionid of 1
+                this.sectionid = 1;
+            } else if (e.target.ancestor(CSS.SECTION)) {
+                var section = e.target.ancestor(CSS.SECTION);
+                this.sectionid = section.get('id').replace('section-', '');
+            } else if (e.target.ancestor(CSS.SITEMENU)) {
+                // The block site menu has a sectionid of 0
+                this.sectionid = 0;
+            }
             this.display_chooser(e);
         },
         toggle_mod_chooser : function(e) {

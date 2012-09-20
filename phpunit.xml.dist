@@ -14,9 +14,7 @@
         stopOnIncomplete="false"
         stopOnSkipped="false"
         strict="false"
-        verbose="false"
         printerClass="Hint_ResultPrinter"
-        printerFile="lib/phpunit/classes/hint_resultprinter.php"
         >
 
     <php>
@@ -40,6 +38,9 @@
         </testsuite>
         <testsuite name="core_files">
             <directory suffix="_test.php">lib/filestorage/tests</directory>
+        </testsuite>
+        <testsuite name="core_cohort">
+            <directory suffix="_test.php">cohort/tests</directory>
         </testsuite>
         <testsuite name="core_grade">
             <directory suffix="_test.php">lib/grade/tests</directory>

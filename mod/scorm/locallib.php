@@ -22,6 +22,10 @@ define('SCORM_UPDATE_NEVER', '0');
 define('SCORM_UPDATE_EVERYDAY', '2');
 define('SCORM_UPDATE_EVERYTIME', '3');
 
+define('SCORM_SKIPVIEW_NEVER', '0');
+define('SCORM_SKIPVIEW_FIRST', '1');
+define('SCORM_SKIPVIEW_ALWAYS', '2');
+
 define('SCO_ALL', 0);
 define('SCO_DATA', 1);
 define('SCO_ONLY', 2);
@@ -109,9 +113,9 @@ function scorm_get_what_grade_array() {
  * @return array an array of skip view options
  */
 function scorm_get_skip_view_array() {
-    return array(0 => get_string('never'),
-                 1 => get_string('firstaccess', 'scorm'),
-                 2 => get_string('always'));
+    return array(SCORM_SKIPVIEW_NEVER => get_string('never'),
+                 SCORM_SKIPVIEW_FIRST => get_string('firstaccess', 'scorm'),
+                 SCORM_SKIPVIEW_ALWAYS => get_string('always'));
 }
 
 /**
@@ -177,7 +181,7 @@ function scorm_parse($scorm, $full) {
         $cm = get_coursemodule_from_instance('scorm', $scorm->id);
         $scorm->cmid = $cm->id;
     }
-    $context = get_context_instance(CONTEXT_MODULE, $scorm->cmid);
+    $context = context_module::instance($scorm->cmid);
     $newhash = $scorm->sha1hash;
 
     if ($scorm->scormtype === SCORM_TYPE_LOCAL or $scorm->scormtype === SCORM_TYPE_LOCALSYNC) {
@@ -432,6 +436,18 @@ function scorm_insert_track($userid, $scormid, $scoid, $attempt, $element, $valu
     return $id;
 }
 
+/**
+ * simple quick function to return true/false if this user has tracks in this scorm
+ *
+ * @param integer $scormid The scorm ID
+ * @param integer $userid the users id
+ * @return boolean (false if there are no tracks)
+ */
+function scorm_has_tracks($scormid, $userid) {
+    global $DB;
+    return $DB->record_exists('scorm_scoes_track', array('userid' => $userid, 'scormid' => $scormid));
+}
+
 function scorm_get_tracks($scoid, $userid, $attempt='') {
     /// Gets all tracks of specified sco and user
     global $CFG, $DB;
@@ -450,6 +466,7 @@ function scorm_get_tracks($scoid, $userid, $attempt='') {
         // Defined in order to unify scorm1.2 and scorm2004
         $usertrack->score_raw = '';
         $usertrack->status = '';
+        $usertrack->progress = '';
         $usertrack->total_time = '00:00:00';
         $usertrack->session_time = '00:00:00';
         $usertrack->timemodified = 0;
@@ -463,19 +480,35 @@ function scorm_get_tracks($scoid, $userid, $attempt='') {
                         $track->value = 'notattempted';
                     }
                     $usertrack->status = $track->value;
-                break;
+                    break;
+                case 'cmi.success_status':
+                    $usertrack->progress = $track->value;
+                    break;
+                case 'cmi.progress_measure':
+                    if (!empty($track->value) && (empty($usertrack->progress) || $usertrack->progress == 'unknown') ) {
+                        $usertrack->progress = $track->value;
+                    }
+                    break;
                 case 'cmi.core.score.raw':
                 case 'cmi.score.raw':
                     $usertrack->score_raw = (float) sprintf('%2.2f', $track->value);
-                break;
+                    break;
+                case 'cmi.core.score.max':
+                case 'cmi.score.max':
+                    $usertrack->score_max = (float) sprintf('%2.2f', $track->value);
+                    break;
+                case 'cmi.core.score.min':
+                case 'cmi.score.min':
+                    $usertrack->score_min = (float) sprintf('%2.2f', $track->value);
+                    break;
                 case 'cmi.core.session_time':
                 case 'cmi.session_time':
                     $usertrack->session_time = $track->value;
-                break;
+                    break;
                 case 'cmi.core.total_time':
                 case 'cmi.total_time':
                     $usertrack->total_time = $track->value;
-                break;
+                    break;
             }
             if (isset($track->timemodified) && ($track->timemodified > $usertrack->timemodified)) {
                 $usertrack->timemodified = $track->timemodified;
@@ -642,33 +675,50 @@ function scorm_count_launchable($scormid, $organization='') {
     return $DB->count_records_select('scorm_scoes', "scorm = ? $sqlorganization AND ".$DB->sql_isnotempty('scorm_scoes', 'launch', false, true), $params);
 }
 
+/**
+ * Returns the last attempt used - if no attempts yet, returns 1 for first attempt
+ *
+ * @param int $scormid the id of the scorm.
+ * @param int $userid the id of the user.
+ *
+ * @return int The attempt number to use.
+ */
 function scorm_get_last_attempt($scormid, $userid) {
     global $DB;
 
     /// Find the last attempt number for the given user id and scorm id
-    if ($lastattempt = $DB->get_record('scorm_scoes_track', array('userid'=>$userid, 'scormid'=>$scormid), 'max(attempt) as a')) {
-        if (empty($lastattempt->a)) {
-            return '1';
-        } else {
-            return $lastattempt->a;
-        }
+    $sql = "SELECT MAX(attempt)
+              FROM {scorm_scoes_track}
+             WHERE userid = ? AND scormid = ?";
+    $lastattempt = $DB->get_field_sql($sql, array($userid, $scormid));
+    if (empty($lastattempt)) {
+        return '1';
     } else {
-        return false;
+        return $lastattempt;
     }
 }
 
+/**
+ * Returns the last completed attempt used - if no completed attempts yet, returns 1 for first attempt
+ *
+ * @param int $scormid the id of the scorm.
+ * @param int $userid the id of the user.
+ *
+ * @return int The attempt number to use.
+ */
 function scorm_get_last_completed_attempt($scormid, $userid) {
     global $DB;
 
-    /// Find the last attempt number for the given user id and scorm id
-    if ($lastattempt = $DB->get_record_select('scorm_scoes_track', "userid = ? AND scormid = ? AND (value='completed' OR value='passed')", array($userid, $scormid), 'max(attempt) as a')) {
-        if (empty($lastattempt->a)) {
-            return '1';
-        } else {
-            return $lastattempt->a;
-        }
+    /// Find the last completed attempt number for the given user id and scorm id
+    $sql = "SELECT MAX(attempt)
+              FROM {scorm_scoes_track}
+             WHERE userid = ? AND scormid = ?
+               AND (value='completed' OR value='passed')";
+    $lastattempt = $DB->get_field_sql($sql, array($userid, $scormid));
+    if (empty($lastattempt)) {
+        return '1';
     } else {
-        return false;
+        return $lastattempt;
     }
 }
 
@@ -676,7 +726,7 @@ function scorm_course_format_display($user, $course) {
     global $CFG, $DB, $PAGE, $OUTPUT;
 
     $strupdate = get_string('update');
-    $context = get_context_instance(CONTEXT_COURSE, $course->id);
+    $context = context_course::instance($course->id);
 
     echo '<div class="mod-scorm">';
     if ($scorms = get_all_instances_in_course('scorm', $course)) {
@@ -685,7 +735,7 @@ function scorm_course_format_display($user, $course) {
         if (! $cm = get_coursemodule_from_instance('scorm', $scorm->id, $course->id)) {
             print_error('invalidcoursemodule');
         }
-        $contextmodule = get_context_instance(CONTEXT_MODULE, $cm->id);
+        $contextmodule = context_module::instance($cm->id);
         if ((has_capability('mod/scorm:skipview', $contextmodule))) {
             scorm_simple_play($scorm, $user, $contextmodule, $cm->id);
         }
@@ -844,12 +894,12 @@ function scorm_simple_play($scorm, $user, $context, $cmid) {
                 $orgidentifier = $sco->organization;
             }
         }
-        if ($scorm->skipview >= 1) {
+        if ($scorm->skipview >= SCORM_SKIPVIEW_FIRST) {
             $sco = current($scoes);
             $url = new moodle_url('/mod/scorm/player.php', array('a' => $scorm->id,
                                                                 'currentorg'=>$orgidentifier,
                                                                 'scoid'=>$sco->id));
-            if ($scorm->skipview == 2 || scorm_get_tracks($sco->id, $user->id) === false) {
+            if ($scorm->skipview == SCORM_SKIPVIEW_ALWAYS || !scorm_has_tracks($scorm->id, $user->id)) {
                 if (!empty($scorm->forcenewattempt)) {
                     $result = scorm_get_toc($user, $scorm, $cmid, TOCFULLURL, $orgidentifier);
                     if ($result->incomplete === false) {
@@ -1338,7 +1388,8 @@ function scorm_get_toc($user,$scorm,$cmid,$toclink=TOCJSLINK,$currentorg='',$sco
                 $isvisible = true;
             }
             if ($parents[$level] != $sco->parent) {
-                if ($newlevel = array_search($sco->parent,$parents)) {
+                $newlevel = array_search($sco->parent,$parents);
+                if ($newlevel !== false) {
                     for ($i=0; $i<($level-$newlevel); $i++) {
                         $result->toc .= "\t\t</li></ul></li>\n";
                     }
@@ -1404,7 +1455,7 @@ function scorm_get_toc($user,$scorm,$cmid,$toclink=TOCJSLINK,$currentorg='',$sco
                                 $scoid = $sco->id;
                             }
                         }
-                        if ($usertrack->score_raw != '' && has_capability('mod/scorm:viewscores', get_context_instance(CONTEXT_MODULE,$cmid))) {
+                        if ($usertrack->score_raw != '' && has_capability('mod/scorm:viewscores', context_module::instance($cmid))) {
                             $score = '('.get_string('score','scorm').':&nbsp;'.$usertrack->score_raw.')';
                         }
                         $strsuspended = get_string('suspended','scorm');

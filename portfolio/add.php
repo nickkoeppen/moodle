@@ -165,7 +165,7 @@ if (!empty($dataid)) {
     foreach (array_keys(array_merge($_GET, $_POST)) as $key) {
         if (strpos($key, 'ca_') === 0) {
             if (!$value =  optional_param($key, false, PARAM_ALPHAEXT)) {
-                if (!$value = optional_param($key, false, PARAM_NUMBER)) {
+                if (!$value = optional_param($key, false, PARAM_FLOAT)) {
                     $value = optional_param($key, false, PARAM_PATH);
                 }
             }
@@ -221,7 +221,8 @@ if (!$exporter->get('instance')) {
         throw new portfolio_export_exception($exporter, 'noavailableplugins', 'portfolio');
     } else if (count($options) == 1) {
         // no point displaying a form, just redirect.
-        $instance = array_shift(array_keys($options));
+        $optionskeys = array_keys($options);
+        $instance = array_shift($optionskeys);
         redirect($CFG->wwwroot . '/portfolio/add.php?id= ' . $exporter->get('id') . '&instance=' . $instance . '&sesskey=' . sesskey());
     }
     // be very selective about not including this unless we really need to

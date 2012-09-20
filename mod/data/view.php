@@ -84,7 +84,7 @@
     require_once($CFG->dirroot . '/comment/lib.php');
     comment::init();
 
-    $context = get_context_instance(CONTEXT_MODULE, $cm->id);
+    $context = context_module::instance($cm->id);
     require_capability('mod/data:viewentry', $context);
 
 /// If we have an empty Database then redirect because this page is useless without data
@@ -275,7 +275,7 @@
         $USER->editing = $edit;
     }
 
-    $courseshortname = format_string($course->shortname, true, array('context' => get_context_instance(CONTEXT_COURSE, $course->id)));
+    $courseshortname = format_string($course->shortname, true, array('context' => context_course::instance($course->id)));
 
 /// RSS and CSS and JS meta
     $meta = '';
@@ -613,8 +613,12 @@ if ($showactivity) {
         if ($record) {     // We need to just show one, so where is it in context?
             $nowperpage = 1;
             $mode = 'single';
-            $page = (int)array_search($record->id, $recordids);
-
+            $page = 0;
+            // TODO MDL-33797 - Reduce this or consider redesigning the paging system.
+            if ($allrecordids = $DB->get_fieldset_sql($sqlselect, $allparams)) {
+                $page = (int)array_search($record->id, $allrecordids);
+                unset($allrecordids);
+            }
         } else if ($mode == 'single') {  // We rely on ambient $page settings
             $nowperpage = 1;
 

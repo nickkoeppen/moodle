@@ -89,7 +89,12 @@ class assign_upgrade_manager {
         $data->allowsubmissionsfromdate = $oldassignment->timeavailable;
         $data->grade = $oldassignment->grade;
         $data->submissiondrafts = $oldassignment->resubmit;
-        $data->preventlatesubmissions = $oldassignment->preventlate;
+        $data->requiresubmissionstatement = 0;
+        $data->cutoffdate = 0;
+        // New way to specify no late submissions.
+        if ($oldassignment->preventlate) {
+            $data->cutoffdate = $data->duedate;
+        }
 
         $newassignment = new assign(null, null, null);
 
@@ -154,8 +159,12 @@ class assign_upgrade_manager {
 
             // upgrade completion data
             $DB->set_field('course_modules_completion', 'coursemoduleid', $newcoursemodule->id, array('coursemoduleid'=>$oldcoursemodule->id));
-            $DB->set_field('course_completion_criteria', 'module', 'assign', array('moduleinstance'=>$oldcoursemodule->id));
-            $DB->set_field('course_completion_criteria', 'moduleinstance', $newcoursemodule->id, array('moduleinstance'=>$oldcoursemodule->id));
+            $allcriteria = $DB->get_records('course_completion_criteria', array('moduleinstance'=>$oldcoursemodule->id));
+            foreach ($allcriteria as $criteria) {
+                $criteria->module = 'assign';
+                $criteria->moduleinstance = $newcoursemodule->id;
+                $DB->update_record('course_completion_criteria', $criteria);
+            }
             $completiondone = true;
 
 
@@ -219,11 +228,15 @@ class assign_upgrade_manager {
             }
 
             $newassignment->update_calendar($newcoursemodule->id);
-            $newassignment->update_gradebook(false,$newcoursemodule->id);
 
             // copy the grades from the old assignment to the new one
-            $DB->set_field('grade_items', 'itemmodule', 'assign', array('iteminstance'=>$oldassignment->id));
-            $DB->set_field('grade_items', 'iteminstance', $newassignment->get_instance()->id, array('iteminstance'=>$oldassignment->id));
+
+            $gradeitem = $DB->get_record('grade_items', array('iteminstance'=>$oldassignment->id, 'itemmodule'=>'assignment'), 'id', IGNORE_MISSING);
+            if ($gradeitem) {
+                $gradeitem->iteminstance = $newassignment->get_instance()->id;
+                $gradeitem->itemmodule = 'assign';
+                $DB->update_record('grade_items', $gradeitem);
+            }
             $gradesdone = true;
 
         } catch (Exception $exception) {
@@ -235,14 +248,22 @@ class assign_upgrade_manager {
             // roll back the grades changes
             if ($gradesdone) {
                 // copy the grades from the old assignment to the new one
-                $DB->set_field('grade_items', 'itemmodule', 'assignment', array('iteminstance'=>$newassignment->get_instance()->id));
-                $DB->set_field('grade_items', 'iteminstance', $oldassignment->id, array('iteminstance'=>$newassignment->get_instance()->id));
+                $gradeitem = $DB->get_record('grade_items', array('iteminstance'=>$newassignment->get_instance()->id, 'itemmodule'=>'assign'), 'id', IGNORE_MISSING);
+                if ($gradeitem) {
+                    $gradeitem->iteminstance = $oldassignment->id;
+                    $gradeitem->itemmodule = 'assignment';
+                    $DB->update_record('grade_items', $gradeitem);
+                }
             }
             // roll back the completion changes
             if ($completiondone) {
                 $DB->set_field('course_modules_completion', 'coursemoduleid', $oldcoursemodule->id, array('coursemoduleid'=>$newcoursemodule->id));
-                $DB->set_field('course_completion_criteria', 'module', 'assignment', array('moduleinstance'=>$newcoursemodule->id));
-                $DB->set_field('course_completion_criteria', 'moduleinstance', $oldcoursemodule->id, array('moduleinstance'=>$newcoursemodule->id));
+                $allcriteria = $DB->get_records('course_completion_criteria', array('moduleinstance'=>$newcoursemodule->id));
+                foreach ($allcriteria as $criteria) {
+                    $criteria->module = 'assignment';
+                    $criteria->moduleinstance = $oldcoursemodule->id;
+                    $DB->update_record('course_completion_criteria', $criteria);
+                }
             }
             // roll back the advanced grading update
             if ($gradingarea) {

@@ -85,14 +85,6 @@ define('CALENDAR_EVENT_GROUP', 4);
  */
 define('CALENDAR_EVENT_USER', 8);
 
-/**
- * CALENDAR_STARTING_WEEKDAY - has since been deprecated please call calendar_get_starting_weekday() instead
- *
- * @deprecated Moodle 2.0 MDL-24284- please do not use this function any more.
- * @todo MDL-31132 This will be deleted in Moodle 2.3.
- * @see calendar_get_starting_weekday()
- */
-define('CALENDAR_STARTING_WEEKDAY', CALENDAR_DEFAULT_STARTING_WEEKDAY);
 
 /**
  * Return the days of the week
@@ -242,7 +234,6 @@ function calendar_get_mini($courses, $groups, $users, $cal_month = false, $cal_y
     $days_title = calendar_get_days();
 
     $summary = get_string('calendarheading', 'calendar', userdate(make_timestamp($y, $m), get_string('strftimemonthyear')));
-    $summary = get_string('tabledata', 'access', $summary);
     $content .= '<table class="minicalendar calendartable" summary="'.$summary.'">'; // Begin table
     $content .= '<tr class="weekdays">'; // Header row: day names
 
@@ -589,7 +580,7 @@ function calendar_add_event_metadata($event) {
         }
         $icon = $OUTPUT->pix_url('icon', $event->modulename) . '';
 
-        $context = get_context_instance(CONTEXT_COURSE, $module->course);
+        $context = context_course::instance($module->course);
         $fullname = format_string($coursecache[$module->course]->fullname, true, array('context' => $context));
 
         $event->icon = '<img height="16" width="16" src="'.$icon.'" alt="'.$eventtype.'" title="'.$modulename.'" style="vertical-align: middle;" />';
@@ -604,7 +595,7 @@ function calendar_add_event_metadata($event) {
     } else if($event->courseid != 0 && $event->courseid != SITEID && $event->groupid == 0) {          // Course event
         calendar_get_course_cached($coursecache, $event->courseid);
 
-        $context = get_context_instance(CONTEXT_COURSE, $event->courseid);
+        $context = context_course::instance($event->courseid);
         $fullname = format_string($coursecache[$event->courseid]->fullname, true, array('context' => $context));
 
         $event->icon = '<img height="16" width="16" src="'.$OUTPUT->pix_url('c/course') . '" alt="'.get_string('courseevent', 'calendar').'" style="vertical-align: middle;" />';
@@ -881,6 +872,49 @@ function calendar_top_controls($type, $data) {
 }
 
 /**
+ * Formats a filter control element.
+ *
+ * @param moodle_url $url of the filter
+ * @param int $type constant defining the type filter
+ * @return string html content of the element
+ */
+function calendar_filter_controls_element(moodle_url $url, $type) {
+    global $OUTPUT;
+    switch ($type) {
+        case CALENDAR_EVENT_GLOBAL:
+            $typeforhumans = 'global';
+            $class = 'calendar_event_global';
+            break;
+        case CALENDAR_EVENT_COURSE:
+            $typeforhumans = 'course';
+            $class = 'calendar_event_course';
+            break;
+        case CALENDAR_EVENT_GROUP:
+            $typeforhumans = 'groups';
+            $class = 'calendar_event_group';
+            break;
+        case CALENDAR_EVENT_USER:
+            $typeforhumans = 'user';
+            $class = 'calendar_event_user';
+            break;
+    }
+    if (calendar_show_event_type($type)) {
+        $icon = $OUTPUT->pix_icon('t/hide', get_string('hide'));
+        $str = get_string('hide'.$typeforhumans.'events', 'calendar');
+    } else {
+        $icon = $OUTPUT->pix_icon('t/show', get_string('show'));
+        $str = get_string('show'.$typeforhumans.'events', 'calendar');
+    }
+    $content = html_writer::start_tag('li', array('class' => 'calendar_event'));
+    $content .= html_writer::start_tag('a', array('href' => $url));
+    $content .= html_writer::tag('span', $icon, array('class' => $class));
+    $content .= html_writer::tag('span', $str, array('class' => 'eventname'));
+    $content .= html_writer::end_tag('a');
+    $content .= html_writer::end_tag('li');
+    return $content;
+}
+
+/**
  * Get the controls filter for calendar.
  *
  * Filter is used to hide calendar info from the display page
@@ -892,60 +926,28 @@ function calendar_filter_controls(moodle_url $returnurl) {
     global $CFG, $USER, $OUTPUT;
 
     $groupevents = true;
-
     $id = optional_param( 'id',0,PARAM_INT );
-
     $seturl = new moodle_url('/calendar/set.php', array('return' => base64_encode($returnurl->out(false)), 'sesskey'=>sesskey()));
-
-    $content = '<table>';
-    $content .= '<tr>';
+    $content = html_writer::start_tag('ul');
 
     $seturl->param('var', 'showglobal');
-    if (calendar_show_event_type(CALENDAR_EVENT_GLOBAL)) {
-        $content .= '<td class="eventskey calendar_event_global" style="width: 11px;"><img src="'.$OUTPUT->pix_url('t/hide') . '" class="iconsmall" alt="'.get_string('hide').'" title="'.get_string('tt_hideglobal', 'calendar').'" style="cursor:pointer" onclick="location.href='."'".$seturl."'".'" /></td>';
-        $content .= '<td><a href="'.$seturl.'" title="'.get_string('tt_hideglobal', 'calendar').'">'.get_string('global', 'calendar').'</a></td>'."\n";
-    } else {
-        $content .= '<td style="width: 11px;"><img src="'.$OUTPUT->pix_url('t/show') . '" class="iconsmall" alt="'.get_string('show').'" title="'.get_string('tt_showglobal', 'calendar').'" style="cursor:pointer" onclick="location.href='."'".$seturl."'".'" /></td>';
-        $content .= '<td><a href="'.$seturl.'" title="'.get_string('tt_showglobal', 'calendar').'">'.get_string('global', 'calendar').'</a></td>'."\n";
-    }
+    $content .= calendar_filter_controls_element($seturl, CALENDAR_EVENT_GLOBAL);
 
     $seturl->param('var', 'showcourses');
-    if (calendar_show_event_type(CALENDAR_EVENT_COURSE)) {
-        $content .= '<td class="eventskey calendar_event_course" style="width: 11px;"><img src="'.$OUTPUT->pix_url('t/hide') . '" class="iconsmall" alt="'.get_string('hide').'" title="'.get_string('tt_hidecourse', 'calendar').'" style="cursor:pointer" onclick="location.href='."'".$seturl."'".'" /></td>';
-        $content .= '<td><a href="'.$seturl.'" title="'.get_string('tt_hidecourse', 'calendar').'">'.get_string('course', 'calendar').'</a></td>'."\n";
-    } else {
-        $content .= '<td style="width: 11px;"><img src="'.$OUTPUT->pix_url('t/show') . '" class="iconsmall" alt="'.get_string('hide').'" title="'.get_string('tt_showcourse', 'calendar').'" style="cursor:pointer" onclick="location.href='."'".$seturl."'".'" /></td>';
-        $content .= '<td><a href="'.$seturl.'" title="'.get_string('tt_showcourse', 'calendar').'">'.get_string('course', 'calendar').'</a></td>'."\n";
-    }
+    $content .= calendar_filter_controls_element($seturl, CALENDAR_EVENT_COURSE);
 
     if (isloggedin() && !isguestuser()) {
-        $content .= "</tr>\n<tr>";
-
         if ($groupevents) {
             // This course MIGHT have group events defined, so show the filter
             $seturl->param('var', 'showgroups');
-            if (calendar_show_event_type(CALENDAR_EVENT_GROUP)) {
-                $content .= '<td class="eventskey calendar_event_group" style="width: 11px;"><img src="'.$OUTPUT->pix_url('t/hide') . '" class="iconsmall" alt="'.get_string('hide').'" title="'.get_string('tt_hidegroups', 'calendar').'" style="cursor:pointer" onclick="location.href='."'".$seturl."'".'" /></td>';
-                $content .= '<td><a href="'.$seturl.'" title="'.get_string('tt_hidegroups', 'calendar').'">'.get_string('group', 'calendar').'</a></td>'."\n";
-            } else {
-                $content .= '<td style="width: 11px;"><img src="'.$OUTPUT->pix_url('t/show') . '" class="iconsmall" alt="'.get_string('show').'" title="'.get_string('tt_showgroups', 'calendar').'" style="cursor:pointer" onclick="location.href='."'".$seturl."'".'" /></td>';
-                $content .= '<td><a href="'.$seturl.'" title="'.get_string('tt_showgroups', 'calendar').'">'.get_string('group', 'calendar').'</a></td>'."\n";
-            }
+            $content .= calendar_filter_controls_element($seturl, CALENDAR_EVENT_GROUP);
         } else {
             // This course CANNOT have group events, so lose the filter
-            $content .= '<td style="width: 11px;"></td><td>&nbsp;</td>'."\n";
         }
-
         $seturl->param('var', 'showuser');
-        if (calendar_show_event_type(CALENDAR_EVENT_USER)) {
-            $content .= '<td class="eventskey calendar_event_user" style="width: 11px;"><img src="'.$OUTPUT->pix_url('t/hide') . '" class="iconsmall" alt="'.get_string('hide').'" title="'.get_string('tt_hideuser', 'calendar').'" style="cursor:pointer" onclick="location.href='."'".$seturl."'".'" /></td>';
-            $content .= '<td><a href="'.$seturl.'" title="'.get_string('tt_hideuser', 'calendar').'">'.get_string('user', 'calendar').'</a></td>'."\n";
-        } else {
-            $content .= '<td style="width: 11px;"><img src="'.$OUTPUT->pix_url('t/show') . '" class="iconsmall" alt="'.get_string('show').'" title="'.get_string('tt_showuser', 'calendar').'" style="cursor:pointer" onclick="location.href='."'".$seturl."'".'" /></td>';
-            $content .= '<td><a href="'.$seturl.'" title="'.get_string('tt_showuser', 'calendar').'">'.get_string('user', 'calendar').'</a></td>'."\n";
-        }
+        $content .= calendar_filter_controls_element($seturl, CALENDAR_EVENT_USER);
     }
-    $content .= "</tr>\n</table>\n";
+    $content .= html_writer::end_tag('ul');
 
     return $content;
 }
@@ -1383,7 +1385,7 @@ function calendar_set_filters(array $courseeventsfrom, $ignorefilters = false) {
 
         if (count($courseeventsfrom)==1) {
             $course = reset($courseeventsfrom);
-            if (has_any_capability($allgroupscaps, get_context_instance(CONTEXT_COURSE, $course->id))) {
+            if (has_any_capability($allgroupscaps, context_course::instance($course->id))) {
                 $coursegroups = groups_get_all_groups($course->id, 0, 0, 'g.id');
                 $group = array_keys($coursegroups);
             }
@@ -1439,7 +1441,7 @@ function calendar_edit_event_allowed($event) {
         return false;
     }
 
-    $sitecontext = get_context_instance(CONTEXT_SYSTEM);
+    $sitecontext = context_system::instance();
     // if user has manageentries at site level, return true
     if (has_capability('moodle/calendar:manageentries', $sitecontext)) {
         return true;
@@ -1628,6 +1630,7 @@ function calendar_print_month_selector($name, $selected) {
     for ($i=1; $i<=12; $i++) {
         $months[$i] = userdate(gmmktime(12, 0, 0, $i, 15, 2000), '%B');
     }
+    echo html_writer::label(get_string('months'), 'menu'. $name, false, array('class' => 'accesshide'));
     echo html_writer::select($months, $name, $selected, false);
 }
 
@@ -1707,14 +1710,14 @@ function calendar_get_allowed_types(&$allowed, $course = null) {
     $allowed->user = has_capability('moodle/calendar:manageownentries', get_system_context());
     $allowed->groups = false; // This may change just below
     $allowed->courses = false; // This may change just below
-    $allowed->site = has_capability('moodle/calendar:manageentries', get_context_instance(CONTEXT_COURSE, SITEID));
+    $allowed->site = has_capability('moodle/calendar:manageentries', context_course::instance(SITEID));
 
     if (!empty($course)) {
         if (!is_object($course)) {
             $course = $DB->get_record('course', array('id' => $course), '*', MUST_EXIST);
         }
         if ($course->id != SITEID) {
-            $coursecontext = get_context_instance(CONTEXT_COURSE, $course->id);
+            $coursecontext = context_course::instance($course->id);
             $allowed->user = has_capability('moodle/calendar:manageownentries', $coursecontext);
 
             if (has_capability('moodle/calendar:manageentries', $coursecontext)) {
@@ -1761,7 +1764,7 @@ function calendar_add_event_allowed($event) {
         return false;
     }
 
-    $sitecontext = get_context_instance(CONTEXT_SYSTEM);
+    $sitecontext = context_system::instance();
     // if user has manageentries at site level, always return true
     if (has_capability('moodle/calendar:manageentries', $sitecontext)) {
         return true;
@@ -1962,20 +1965,20 @@ class calendar_event {
 
         $context = null;
         if (isset($data->courseid) && $data->courseid > 0) {
-            $context =  get_context_instance(CONTEXT_COURSE, $data->courseid);
+            $context =  context_course::instance($data->courseid);
         } else if (isset($data->course) && $data->course > 0) {
-            $context =  get_context_instance(CONTEXT_COURSE, $data->course);
+            $context =  context_course::instance($data->course);
         } else if (isset($data->groupid) && $data->groupid > 0) {
             $group = $DB->get_record('groups', array('id'=>$data->groupid));
-            $context = get_context_instance(CONTEXT_COURSE, $group->courseid);
+            $context = context_course::instance($group->courseid);
         } else if (isset($data->userid) && $data->userid > 0 && $data->userid == $USER->id) {
-            $context =  get_context_instance(CONTEXT_USER, $data->userid);
+            $context =  context_user::instance($data->userid);
         } else if (isset($data->userid) && $data->userid > 0 && $data->userid != $USER->id &&
                    isset($data->instance) && $data->instance > 0) {
             $cm = get_coursemodule_from_instance($data->modulename, $data->instance, 0, false, MUST_EXIST);
-            $context =  get_context_instance(CONTEXT_COURSE, $cm->course);
+            $context =  context_course::instance($cm->course);
         } else {
-            $context =  get_context_instance(CONTEXT_USER);
+            $context =  context_user::instance();
         }
 
         return $context;

@@ -20,8 +20,7 @@
  * The general idea behind this file is that any errors should throw exceptions
  * which will be returned and acted upon by the calling AJAX script.
  *
- * @package    enrol
- * @subpackage cohort
+ * @package    enrol_cohort
  * @copyright  2011 Sam Hemelryk
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
@@ -33,14 +32,14 @@ require_once($CFG->dirroot.'/enrol/locallib.php');
 require_once($CFG->dirroot.'/enrol/cohort/locallib.php');
 require_once($CFG->dirroot.'/group/lib.php');
 
-// Must have the sesskey
+// Must have the sesskey.
 $id      = required_param('id', PARAM_INT); // course id
-$action  = required_param('action', PARAM_ACTION);
+$action  = required_param('action', PARAM_ALPHANUMEXT);
 
 $PAGE->set_url(new moodle_url('/enrol/cohort/ajax.php', array('id'=>$id, 'action'=>$action)));
 
 $course = $DB->get_record('course', array('id'=>$id), '*', MUST_EXIST);
-$context = get_context_instance(CONTEXT_COURSE, $course->id, MUST_EXIST);
+$context = context_course::instance($course->id, MUST_EXIST);
 
 if ($course->id == SITEID) {
     throw new moodle_exception('invalidcourse');
@@ -50,7 +49,7 @@ require_login($course);
 require_capability('moodle/course:enrolreview', $context);
 require_sesskey();
 
-echo $OUTPUT->header(); // send headers
+echo $OUTPUT->header(); // Send headers.
 
 $manager = new course_enrolment_manager($PAGE, $course);
 

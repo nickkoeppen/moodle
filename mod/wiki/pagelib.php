@@ -97,7 +97,7 @@ abstract class page_wiki {
     function __construct($wiki, $subwiki, $cm) {
         global $PAGE, $CFG;
         $this->subwiki = $subwiki;
-        $this->modcontext = get_context_instance(CONTEXT_MODULE, $PAGE->cm->id);
+        $this->modcontext = context_module::instance($PAGE->cm->id);
 
         // initialise wiki renderer
         $this->wikioutput = $PAGE->get_renderer('mod_wiki');
@@ -388,7 +388,6 @@ class page_wiki_edit extends page_wiki {
         parent::__construct($wiki, $subwiki, $cm);
         self::$attachmentoptions = array('subdirs' => false, 'maxfiles' => - 1, 'maxbytes' => $CFG->maxbytes, 'accepted_types' => '*');
         $PAGE->requires->js_init_call('M.mod_wiki.renew_lock', null, true);
-        $PAGE->requires->yui2_lib('connection');
     }
 
     protected function print_pagetitle() {
@@ -638,7 +637,7 @@ class page_wiki_comments extends page_wiki {
 
             $user = wiki_get_user_info($comment->userid);
 
-            $fullname = fullname($user, has_capability('moodle/site:viewfullnames', get_context_instance(CONTEXT_COURSE, $course->id)));
+            $fullname = fullname($user, has_capability('moodle/site:viewfullnames', context_course::instance($course->id)));
             $by = new stdclass();
             $by->name = '<a href="' . $CFG->wwwroot . '/user/view.php?id=' . $user->id . '&amp;course=' . $course->id . '">' . $fullname . '</a>';
             $by->date = userdate($comment->timecreated);
@@ -946,9 +945,12 @@ class page_wiki_create extends page_wiki {
         } else {
             $groupid = '0';
         }
-        if (!$this->subwiki = wiki_get_subwiki_by_group($this->wid, $groupid)) {
-            $swid = wiki_add_subwiki($PAGE->activityrecord->id, $groupid, $this->uid);
-            $this->subwiki = wiki_get_subwiki($swid);
+        if (empty($this->subwiki)) {
+            // If subwiki is not set then try find one and set else create one.
+            if (!$this->subwiki = wiki_get_subwiki_by_group($this->wid, $groupid)) {
+                $swid = wiki_add_subwiki($PAGE->activityrecord->id, $groupid, $this->uid);
+                $this->subwiki = wiki_get_subwiki($swid);
+            }
         }
         if ($data) {
             $this->set_title($data->pagetitle);
@@ -1992,7 +1994,7 @@ class page_wiki_save extends page_wiki_edit {
     function print_content() {
         global $PAGE;
 
-        $context = get_context_instance(CONTEXT_MODULE, $PAGE->cm->id);
+        $context = context_module::instance($PAGE->cm->id);
         require_capability('mod/wiki:editpage', $context, NULL, true, 'noeditpermission', 'wiki');
 
         $this->print_save();
@@ -2480,7 +2482,7 @@ class page_wiki_admin extends page_wiki {
     protected function print_delete_content($showorphan = true) {
         $contents = array();
         $table = new html_table();
-        $table->head = array('','Page name');
+        $table->head = array('', get_string('pagename','wiki'));
         $table->attributes['class'] = 'generaltable mdl-align';
         $swid = $this->subwiki->id;
         if ($showorphan) {

@@ -222,7 +222,7 @@ umask(0000);
 
 // exact version of currently used yui2 and 3 library
 $CFG->yui2version = '2.9.0';
-$CFG->yui3version = '3.5.1';
+$CFG->yui3version = '3.6.0';
 
 
 // special support for highly optimised scripts that do not need libraries and DB connection
@@ -478,8 +478,19 @@ setup_DB();
 if (PHPUNIT_TEST and !PHPUNIT_UTIL) {
     // make sure tests do not run in parallel
     phpunit_util::acquire_test_lock();
-    // reset DB tables
-    phpunit_util::reset_database();
+    $dbhash = null;
+    try {
+        if ($dbhash = $DB->get_field('config', 'value', array('name'=>'phpunittest'))) {
+            // reset DB tables
+            phpunit_util::reset_database();
+        }
+    } catch (Exception $e) {
+        if ($dbhash) {
+            // we ned to reinit if reset fails
+            $DB->set_field('config', 'value', 'na', array('name'=>'phpunittest'));
+        }
+    }
+    unset($dbhash);
 }
 
 // Disable errors for now - needed for installation when debug enabled in config.php
@@ -780,6 +791,9 @@ moodle_setlocale();
 
 // Create the $PAGE global - this marks the PAGE and OUTPUT fully initialised, this MUST be done at the end of setup!
 if (!empty($CFG->moodlepageclass)) {
+    if (!empty($CFG->moodlepageclassfile)) {
+        require_once($CFG->moodlepageclassfile);
+    }
     $classname = $CFG->moodlepageclass;
 } else {
     $classname = 'moodle_page';

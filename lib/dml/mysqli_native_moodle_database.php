@@ -1,5 +1,4 @@
 <?php
-
 // This file is part of Moodle - http://moodle.org/
 //
 // Moodle is free software: you can redistribute it and/or modify
@@ -15,27 +14,24 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-
 /**
  * Native mysqli class representing moodle database interface.
  *
- * @package    core
- * @subpackage dml_driver
+ * @package    core_dml
  * @copyright  2008 Petr Skoda (http://skodak.org)
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 defined('MOODLE_INTERNAL') || die();
 
-require_once($CFG->libdir.'/dml/moodle_database.php');
-require_once($CFG->libdir.'/dml/mysqli_native_moodle_recordset.php');
-require_once($CFG->libdir.'/dml/mysqli_native_moodle_temptables.php');
+require_once(__DIR__.'/moodle_database.php');
+require_once(__DIR__.'/mysqli_native_moodle_recordset.php');
+require_once(__DIR__.'/mysqli_native_moodle_temptables.php');
 
 /**
  * Native mysqli class representing moodle database interface.
  *
- * @package    core
- * @subpackage dml_driver
+ * @package    core_dml
  * @copyright  2008 Petr Skoda (http://skodak.org)
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
@@ -77,7 +73,7 @@ class mysqli_native_moodle_database extends moodle_database {
             $dbport = 3306;
         }
         ob_start();
-        $conn = new mysqli($dbhost, $dbuser, $dbpass, '', $dbport, $dbsocket); /// Connect without db
+        $conn = new mysqli($dbhost, $dbuser, $dbpass, '', $dbport, $dbsocket); // Connect without db
         $dberr = ob_get_contents();
         ob_end_clean();
         $errorno = @$conn->connect_errno;
@@ -86,7 +82,13 @@ class mysqli_native_moodle_database extends moodle_database {
             throw new dml_connection_exception($dberr);
         }
 
-        $result = $conn->query("CREATE DATABASE $dbname DEFAULT CHARACTER SET utf8 COLLATE utf8_unicode_ci");
+        if (isset($dboptions['dbcollation']) and strpos($dboptions['dbcollation'], 'utf8_') === 0) {
+            $collation = $dboptions['dbcollation'];
+        } else {
+            $collation = 'utf8_unicode_ci';
+        }
+
+        $result = $conn->query("CREATE DATABASE $dbname DEFAULT CHARACTER SET utf8 DEFAULT COLLATE ".$collation);
 
         $conn->close();
 
@@ -150,22 +152,28 @@ class mysqli_native_moodle_database extends moodle_database {
             return $this->dboptions['dbengine'];
         }
 
-        $engine = null;
-
-        if (!$this->external) {
-            // look for current engine of our config table (the first table that gets created),
-            // so that we create all tables with the same engine
-            $sql = "SELECT engine FROM INFORMATION_SCHEMA.TABLES WHERE table_schema = DATABASE() AND table_name = '{$this->prefix}config'";
-            $this->query_start($sql, NULL, SQL_QUERY_AUX);
-            $result = $this->mysqli->query($sql);
-            $this->query_end($result);
-            if ($rec = $result->fetch_assoc()) {
-                $engine = $rec['engine'];
-            }
-            $result->close();
+        if ($this->external) {
+            return null;
         }
 
+        $engine = null;
+
+        // Look for current engine of our config table (the first table that gets created),
+        // so that we create all tables with the same engine.
+        $sql = "SELECT engine
+                  FROM INFORMATION_SCHEMA.TABLES
+                 WHERE table_schema = DATABASE() AND table_name = '{$this->prefix}config'";
+        $this->query_start($sql, NULL, SQL_QUERY_AUX);
+        $result = $this->mysqli->query($sql);
+        $this->query_end($result);
+        if ($rec = $result->fetch_assoc()) {
+            $engine = $rec['engine'];
+        }
+        $result->close();
+
         if ($engine) {
+            // Cache the result to improve performance.
+            $this->dboptions['dbengine'] = $engine;
             return $engine;
         }
 
@@ -179,7 +187,7 @@ class mysqli_native_moodle_database extends moodle_database {
         }
         $result->close();
 
-        if (!$this->external and $engine === 'MyISAM') {
+        if ($engine === 'MyISAM') {
             // we really do not want MyISAM for Moodle, InnoDB or XtraDB is a reasonable defaults if supported
             $sql = "SHOW STORAGE ENGINES";
             $this->query_start($sql, NULL, SQL_QUERY_AUX);
@@ -200,7 +208,75 @@ class mysqli_native_moodle_database extends moodle_database {
             }
         }
 
+        // Cache the result to improve performance.
+        $this->dboptions['dbengine'] = $engine;
         return $engine;
+    }
+
+    /**
+     * Returns the current MySQL db collation.
+     *
+     * This is an ugly workaround for MySQL default collation problems.
+     *
+     * @return string or null MySQL collation name
+     */
+    public function get_dbcollation() {
+        if (isset($this->dboptions['dbcollation'])) {
+            return $this->dboptions['dbcollation'];
+        }
+        if ($this->external) {
+            return null;
+        }
+
+        $collation = null;
+
+        // Look for current collation of our config table (the first table that gets created),
+        // so that we create all tables with the same collation.
+        $sql = "SELECT collation_name
+                  FROM INFORMATION_SCHEMA.COLUMNS
+                 WHERE table_schema = DATABASE() AND table_name = '{$this->prefix}config' AND column_name = 'value'";
+        $this->query_start($sql, NULL, SQL_QUERY_AUX);
+        $result = $this->mysqli->query($sql);
+        $this->query_end($result);
+        if ($rec = $result->fetch_assoc()) {
+            $collation = $rec['collation_name'];
+        }
+        $result->close();
+
+        if (!$collation) {
+            // Get the default database collation, but only if using UTF-8.
+            $sql = "SELECT @@collation_database";
+            $this->query_start($sql, NULL, SQL_QUERY_AUX);
+            $result = $this->mysqli->query($sql);
+            $this->query_end($result);
+            if ($rec = $result->fetch_assoc()) {
+                if (strpos($rec['@@collation_database'], 'utf8_') === 0) {
+                    $collation = $rec['@@collation_database'];
+                }
+            }
+            $result->close();
+        }
+
+        if (!$collation) {
+            // We want only utf8 compatible collations.
+            $collation = null;
+            $sql = "SHOW COLLATION WHERE Collation LIKE 'utf8\_%' AND Charset = 'utf8'";
+            $this->query_start($sql, NULL, SQL_QUERY_AUX);
+            $result = $this->mysqli->query($sql);
+            $this->query_end($result);
+            while ($res = $result->fetch_assoc()) {
+                $collation = $res['Collation'];
+                if (strtoupper($res['Default']) === 'YES') {
+                    $collation = $res['Collation'];
+                    break;
+                }
+            }
+            $result->close();
+        }
+
+        // Cache the result to improve performance.
+        $this->dboptions['dbcollation'] = $collation;
+        return $collation;
     }
 
     /**
@@ -239,15 +315,19 @@ class mysqli_native_moodle_database extends moodle_database {
     public function diagnose() {
         $sloppymyisamfound = false;
         $prefix = str_replace('_', '\\_', $this->prefix);
-        $sql = "SHOW TABLE STATUS WHERE Name LIKE BINARY '$prefix%'";
+        $sql = "SELECT COUNT('x')
+                  FROM INFORMATION_SCHEMA.TABLES
+                 WHERE table_schema = DATABASE()
+                       AND table_name LIKE BINARY '$prefix%'
+                       AND Engine = 'MyISAM'";
         $this->query_start($sql, null, SQL_QUERY_AUX);
         $result = $this->mysqli->query($sql);
         $this->query_end($result);
         if ($result) {
-            while ($arr = $result->fetch_assoc()) {
-                if ($arr['Engine'] === 'MyISAM') {
+            if ($arr = $result->fetch_assoc()) {
+                $count = reset($arr);
+                if ($count) {
                     $sloppymyisamfound = true;
-                    break;
                 }
             }
             $result->close();
@@ -304,6 +384,7 @@ class mysqli_native_moodle_database extends moodle_database {
         $errorno = @$this->mysqli->connect_errno;
 
         if ($errorno !== 0) {
+            $this->mysqli = null;
             throw new dml_connection_exception($dberr);
         }
 
@@ -324,7 +405,7 @@ class mysqli_native_moodle_database extends moodle_database {
             $this->query_end($result);
         }
 
-        // Connection stabilished and configured, going to instantiate the temptables controller
+        // Connection stabilised and configured, going to instantiate the temptables controller
         $this->temptables = new mysqli_native_moodle_temptables($this);
 
         return true;
@@ -736,7 +817,7 @@ class mysqli_native_moodle_database extends moodle_database {
         if (empty($params)) {
             return $sql;
         }
-        /// ok, we have verified sql statement with ? and correct number of params
+        // ok, we have verified sql statement with ? and correct number of params
         $parts = explode('?', $sql);
         $return = array_shift($parts);
         foreach ($params as $param) {
@@ -823,6 +904,27 @@ class mysqli_native_moodle_database extends moodle_database {
         $this->query_start($sql, $params, SQL_QUERY_SELECT);
         // no MYSQLI_USE_RESULT here, it would block write ops on affected tables
         $result = $this->mysqli->query($rawsql, MYSQLI_STORE_RESULT);
+        $this->query_end($result);
+
+        return $this->create_recordset($result);
+    }
+
+    /**
+     * Get all records from a table.
+     *
+     * This method works around potential memory problems and may improve performance,
+     * this method may block access to table until the recordset is closed.
+     *
+     * @param string $table Name of database table.
+     * @return moodle_recordset A moodle_recordset instance {@link function get_recordset}.
+     * @throws dml_exception A DML specific exception is thrown for any errors.
+     */
+    public function export_table_recordset($table) {
+        $sql = $this->fix_table_names("SELECT * FROM {{$table}}");
+
+        $this->query_start($sql, array(), SQL_QUERY_SELECT);
+        // MYSQLI_STORE_RESULT may eat all memory for large tables, unfortunately MYSQLI_USE_RESULT blocks other queries.
+        $result = $this->mysqli->query($sql, MYSQLI_USE_RESULT);
         $this->query_end($result);
 
         return $this->create_recordset($result);
@@ -1264,7 +1366,6 @@ class mysqli_native_moodle_database extends moodle_database {
         return ' CAST(' . $fieldname . ' AS SIGNED) ';
     }
 
-/// session locking
     public function session_lock_supported() {
         return true;
     }
@@ -1273,7 +1374,7 @@ class mysqli_native_moodle_database extends moodle_database {
      * Obtain session lock
      * @param int $rowid id of the row with session record
      * @param int $timeout max allowed time to wait for the lock in seconds
-     * @return bool success
+     * @return void
      */
     public function get_session_lock($rowid, $timeout) {
         parent::get_session_lock($rowid, $timeout);
@@ -1309,7 +1410,6 @@ class mysqli_native_moodle_database extends moodle_database {
         }
     }
 
-/// transactions
     /**
      * Are transactions supported?
      * It is not responsible to run productions servers

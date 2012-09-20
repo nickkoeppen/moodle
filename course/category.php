@@ -27,6 +27,7 @@
 
 require_once("../config.php");
 require_once($CFG->dirroot.'/course/lib.php');
+require_once($CFG->libdir.'/textlib.class.php');
 
 $id = required_param('id', PARAM_INT); // Category id
 $page = optional_param('page', 0, PARAM_INT); // which page to show
@@ -75,7 +76,8 @@ $sesskeyprovided = !empty($sesskey) && confirm_sesskey($sesskey);
 // Process any category actions.
 if ($canmanage && $resort && $sesskeyprovided) {
     // Resort the category if requested
-    if ($courses = get_courses($category->id, "fullname ASC", 'c.id,c.fullname,c.sortorder')) {
+    if ($courses = get_courses($category->id, '', 'c.id,c.fullname,c.sortorder')) {
+        collatorlib::asort_objects_by_property($courses, 'fullname', collatorlib::SORT_NATURAL);
         $i = 1;
         foreach ($courses as $course) {
             $DB->set_field('course', 'sortorder', $category->sortorder+$i, array('id'=>$course->id));
@@ -93,7 +95,7 @@ if ($editingon && $sesskeyprovided) {
         // Some courses are being moved
         // user must have category update in both cats to perform this
         require_capability('moodle/category:manage', $context);
-        require_capability('moodle/category:manage', get_context_instance(CONTEXT_COURSECAT, $moveto));
+        require_capability('moodle/category:manage', context_coursecat::instance($moveto));
 
         if (!$destcategory = $DB->get_record('course_categories', array('id' => $data->moveto))) {
             print_error('cannotfindcategory', '', '', $data->moveto);
@@ -129,7 +131,7 @@ if ($editingon && $sesskeyprovided) {
         }
 
         if ($course) {
-            $coursecontext = get_context_instance(CONTEXT_COURSE, $course->id);
+            $coursecontext = context_course::instance($course->id);
             require_capability('moodle/course:visibility', $coursecontext);
             // Set the visibility of the course. we set the old flag when user manually changes visibility of course.
             $DB->update_record('course', array('id' => $course->id, 'visible' => $visible, 'visibleold' => $visible, 'timemodified' => time()));
@@ -268,7 +270,7 @@ $baseurl = new moodle_url('/course/category.php');
 foreach ($subcategories as $subcategory) {
     // Preload the context we will need it to format the category name shortly.
     context_helper::preload_from_record($subcategory);
-    $context = get_context_instance(CONTEXT_COURSECAT, $subcategory->id);
+    $context = context_coursecat::instance($subcategory->id);
     // Prepare the things we need to create a link to the subcategory
     $attributes = $subcategory->visible ? array() : array('class' => 'dimmed');
     $text = format_string($subcategory->name, true, array('context' => $context));
@@ -332,7 +334,7 @@ if (!$courses) {
 
     $baseurl = new moodle_url('/course/category.php', $urlparams + array('sesskey' => sesskey()));
     foreach ($courses as $acourse) {
-        $coursecontext = get_context_instance(CONTEXT_COURSE, $acourse->id);
+        $coursecontext = context_course::instance($acourse->id);
 
         $count++;
         $up = ($count > 1 || !$atfirstpage);
@@ -422,6 +424,7 @@ if (!$courses) {
         make_categories_list($movetocategories, $notused, 'moodle/category:manage');
         $movetocategories[$category->id] = get_string('moveselectedcoursesto');
         echo '<tr><td colspan="3" align="right">';
+        echo html_writer::label(get_string('moveselectedcoursesto'), 'movetoid', false, array('class' => 'accesshide'));
         echo html_writer::select($movetocategories, 'moveto', $category->id, null, array('id'=>'movetoid'));
         $PAGE->requires->js_init_call('M.util.init_select_autosubmit', array('movecourses', 'movetoid', false));
         echo '<input type="hidden" name="id" value="'.$category->id.'" />';
@@ -447,7 +450,7 @@ if (has_capability('moodle/course:create', $context)) {
 }
 
 if (!empty($CFG->enablecourserequests) && $category->id == $CFG->defaultrequestcategory) {
-    print_course_request_buttons(get_context_instance(CONTEXT_SYSTEM));
+    print_course_request_buttons(context_system::instance());
 }
 echo '</div>';
 

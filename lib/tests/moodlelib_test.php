@@ -301,6 +301,7 @@ class moodlelib_testcase extends advanced_testcase {
         $this->assertSame(1.1, fix_utf8(1.1));
         $this->assertSame(true, fix_utf8(true));
         $this->assertSame('', fix_utf8(''));
+        $this->assertSame('abc', fix_utf8('abc'));
         $array = array('do', 're', 'mi');
         $this->assertSame($array, fix_utf8($array));
         $object = new stdClass();
@@ -312,7 +313,7 @@ class moodlelib_testcase extends advanced_testcase {
         $this->assertSame("žlutý koníček přeskočil potůček \n\t\r\0", fix_utf8("žlutý koníček přeskočil potůček \n\t\r\0"));
 
         // invalid utf8 string
-        $this->assertSame('aaabbb', fix_utf8('aaa'.chr(130).'bbb'));
+        $this->assertSame('aš', fix_utf8('a'.chr(130).'š'), 'This fails with buggy iconv() when mbstring extenstion is not available as fallback.');
     }
 
     function test_optional_param() {
@@ -356,26 +357,9 @@ class moodlelib_testcase extends advanced_testcase {
         }
 
         // make sure warning is displayed if array submitted - TODO: throw exception in Moodle 2.3
-        $debugging = isset($CFG->debug) ? $CFG->debug : null;
-        $debugdisplay = isset($CFG->debugdisplay) ? $CFG->debugdisplay : null;
-        $CFG->debug = DEBUG_DEVELOPER;
-        $CFG->debugdisplay = true;
-
-        ob_start();
+        $_POST['username'] = array('a'=>'a');
         $this->assertSame(optional_param('username', 'default_user', PARAM_RAW), $_POST['username']);
-        $d = ob_end_clean();
-        $this->assertTrue($d !== '');
-
-        if ($debugging !== null) {
-            $CFG->debug = $debugging;
-        } else {
-            unset($CFG->debug);
-        }
-        if ($debugdisplay !== null) {
-            $CFG->debugdisplay = $debugdisplay;
-        } else {
-            unset($CFG->debugdisplay);
-        }
+        $this->assertDebuggingCalled();
     }
 
     function test_optional_param_array() {
@@ -428,34 +412,14 @@ class moodlelib_testcase extends advanced_testcase {
         }
 
         // do not allow non-arrays
-        $debugging = isset($CFG->debug) ? $CFG->debug : null;
-        $debugdisplay = isset($CFG->debugdisplay) ? $CFG->debugdisplay : null;
-        $CFG->debug = DEBUG_DEVELOPER;
-        $CFG->debugdisplay = true;
-
-        ob_start();
         $_POST['username'] = 'post_user';
         $this->assertSame(optional_param_array('username', array('a'=>'default_user'), PARAM_RAW), array('a'=>'default_user'));
-        $d = ob_end_clean();
-        $this->assertTrue($d !== '');
+        $this->assertDebuggingCalled();
 
         // make sure array keys are sanitised
-        ob_start();
         $_POST['username'] = array('abc123_;-/*-+ '=>'arrggh', 'a1_-'=>'post_user');
         $this->assertSame(optional_param_array('username', array(), PARAM_RAW), array('a1_-'=>'post_user'));
-        $d = ob_end_clean();
-        $this->assertTrue($d !== '');
-
-        if ($debugging !== null) {
-            $CFG->debug = $debugging;
-        } else {
-            unset($CFG->debug);
-        }
-        if ($debugdisplay !== null) {
-            $CFG->debugdisplay = $debugdisplay;
-        } else {
-            unset($CFG->debugdisplay);
-        }
+        $this->assertDebuggingCalled();
     }
 
     function test_required_param() {
@@ -498,26 +462,9 @@ class moodlelib_testcase extends advanced_testcase {
         }
 
         // make sure warning is displayed if array submitted - TODO: throw exception in Moodle 2.3
-        $debugging = isset($CFG->debug) ? $CFG->debug : null;
-        $debugdisplay = isset($CFG->debugdisplay) ? $CFG->debugdisplay : null;
-        $CFG->debug = DEBUG_DEVELOPER;
-        $CFG->debugdisplay = true;
-
-        ob_start();
+        $_POST['username'] = array('a'=>'a');
         $this->assertSame(required_param('username', PARAM_RAW), $_POST['username']);
-        $d = ob_end_clean();
-        $this->assertTrue($d !== '');
-
-        if ($debugging !== null) {
-            $CFG->debug = $debugging;
-        } else {
-            unset($CFG->debug);
-        }
-        if ($debugdisplay !== null) {
-            $CFG->debugdisplay = $debugdisplay;
-        } else {
-            unset($CFG->debugdisplay);
-        }
+        $this->assertDebuggingCalled();
     }
 
     function test_required_param_array() {
@@ -569,29 +516,10 @@ class moodlelib_testcase extends advanced_testcase {
             $this->assertTrue(true);
         }
 
-        // do not allow non-arrays
-        $debugging = isset($CFG->debug) ? $CFG->debug : null;
-        $debugdisplay = isset($CFG->debugdisplay) ? $CFG->debugdisplay : null;
-        $CFG->debug = DEBUG_DEVELOPER;
-        $CFG->debugdisplay = true;
-
         // make sure array keys are sanitised
-        ob_start();
         $_POST['username'] = array('abc123_;-/*-+ '=>'arrggh', 'a1_-'=>'post_user');
         $this->assertSame(required_param_array('username', PARAM_RAW), array('a1_-'=>'post_user'));
-        $d = ob_end_clean();
-        $this->assertTrue($d !== '');
-
-        if ($debugging !== null) {
-            $CFG->debug = $debugging;
-        } else {
-            unset($CFG->debug);
-        }
-        if ($debugdisplay !== null) {
-            $CFG->debugdisplay = $debugdisplay;
-        } else {
-            unset($CFG->debugdisplay);
-        }
+        $this->assertDebuggingCalled();
     }
 
     function test_clean_param() {
@@ -907,6 +835,56 @@ class moodlelib_testcase extends advanced_testcase {
         }
         try {
             $param = validate_param(new stdClass, PARAM_INT);
+            $this->fail('invalid_parameter_exception expected');
+        } catch (invalid_parameter_exception $ex) {
+            $this->assertTrue(true);
+        }
+        try {
+            $param = validate_param('1.0', PARAM_FLOAT);
+            $this->assertSame(1.0, $param);
+
+            // Make sure valid floats do not cause exception.
+            validate_param(1.0, PARAM_FLOAT);
+            validate_param(10, PARAM_FLOAT);
+            validate_param('0', PARAM_FLOAT);
+            validate_param('119813454.545464564564546564545646556564465465456465465465645645465645645645', PARAM_FLOAT);
+            validate_param('011.1', PARAM_FLOAT);
+            validate_param('11', PARAM_FLOAT);
+            validate_param('+.1', PARAM_FLOAT);
+            validate_param('-.1', PARAM_FLOAT);
+            validate_param('1e10', PARAM_FLOAT);
+            validate_param('.1e+10', PARAM_FLOAT);
+            validate_param('1E-1', PARAM_FLOAT);
+            $this->assertTrue(true);
+        } catch (invalid_parameter_exception $ex) {
+            $this->fail('Valid float notation not accepted');
+        }
+        try {
+            $param = validate_param('1,2', PARAM_FLOAT);
+            $this->fail('invalid_parameter_exception expected');
+        } catch (invalid_parameter_exception $ex) {
+            $this->assertTrue(true);
+        }
+        try {
+            $param = validate_param('', PARAM_FLOAT);
+            $this->fail('invalid_parameter_exception expected');
+        } catch (invalid_parameter_exception $ex) {
+            $this->assertTrue(true);
+        }
+        try {
+            $param = validate_param('.', PARAM_FLOAT);
+            $this->fail('invalid_parameter_exception expected');
+        } catch (invalid_parameter_exception $ex) {
+            $this->assertTrue(true);
+        }
+        try {
+            $param = validate_param('e10', PARAM_FLOAT);
+            $this->fail('invalid_parameter_exception expected');
+        } catch (invalid_parameter_exception $ex) {
+            $this->assertTrue(true);
+        }
+        try {
+            $param = validate_param('abc', PARAM_FLOAT);
             $this->fail('invalid_parameter_exception expected');
         } catch (invalid_parameter_exception $ex) {
             $this->assertTrue(true);
@@ -1498,9 +1476,9 @@ class moodlelib_testcase extends advanced_testcase {
                 'hour' => '10',
                 'minutes' => '00',
                 'seconds' => '00',
-                'timezone' => '0.0', //no dst offset
-                'applydst' => false,
-                'expectedoutput' => '1309528800'
+                'timezone' => '0.0',
+                'applydst' => false, //no dst offset
+                'expectedoutput' => '1309514400' // 6pm at UTC+0
             ),
             array(
                 'usertimezone' => 'America/Moncton',
@@ -1858,5 +1836,65 @@ class moodlelib_testcase extends advanced_testcase {
         // Localisation off
         $this->assertEquals('5.43000', format_float(5.43, 5, false));
         $this->assertEquals('5.43', format_float(5.43, 5, false, true));
+    }
+
+    /**
+     * Test deleting of users.
+     */
+    public function test_delete_user() {
+        global $DB, $CFG;
+
+        $this->resetAfterTest();
+
+        $guest = $DB->get_record('user', array('id'=>$CFG->siteguest), '*', MUST_EXIST);
+        $admin = $DB->get_record('user', array('id'=>$CFG->siteadmins), '*', MUST_EXIST);
+        $this->assertEquals(0, $DB->count_records('user', array('deleted'=>1)));
+
+        $user = $this->getDataGenerator()->create_user(array('idnumber'=>'abc'));
+        $user2 = $this->getDataGenerator()->create_user(array('idnumber'=>'xyz'));
+
+        $result = delete_user($user);
+        $this->assertTrue($result);
+        $deluser = $DB->get_record('user', array('id'=>$user->id), '*', MUST_EXIST);
+        $this->assertEquals(1, $deluser->deleted);
+        $this->assertEquals(0, $deluser->picture);
+        $this->assertSame('', $deluser->idnumber);
+        $this->assertSame(md5($user->username), $deluser->email);
+        $this->assertRegExp('/^'.preg_quote($user->email, '/').'\.\d*$/', $deluser->username);
+
+        $this->assertEquals(1, $DB->count_records('user', array('deleted'=>1)));
+
+        // Try invalid params.
+
+        $record = new stdClass();
+        $record->grrr = 1;
+        try {
+            delete_user($record);
+            $this->fail('Expecting exception for invalid delete_user() $user parameter');
+        } catch (coding_exception $e) {
+            $this->assertTrue(true);
+        }
+        $record->id = 1;
+        try {
+            delete_user($record);
+            $this->fail('Expecting exception for invalid delete_user() $user parameter');
+        } catch (coding_exception $e) {
+            $this->assertTrue(true);
+        }
+
+        $record = new stdClass();
+        $record->id = 666;
+        $record->username = 'xx';
+        $this->assertFalse($DB->record_exists('user', array('id'=>666))); // Any non-existent id is ok.
+        $result = delete_user($record);
+        $this->assertFalse($result);
+
+        $result = delete_user($guest);
+        $this->assertFalse($result);
+
+        $result = delete_user($admin);
+        $this->assertFalse($result);
+
+        $this->resetDebugging();
     }
 }

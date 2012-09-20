@@ -481,16 +481,10 @@ abstract class question_testcase extends advanced_testcase {
             $compare = (array)$compare;
             foreach ($expect as $k=>$v) {
                 if (!array_key_exists($k, $compare)) {
-                    if (!$message) {
-                        $message = "Property $k does not exist";
-                    }
-                    $this->fail($message);
+                    $this->fail("Property $k does not exist");
                 }
                 if ($v != $compare[$k]) {
-                    if (!$message) {
-                        $message = "Property $k is different";
-                    }
-                    $this->fail($message);
+                    $this->fail("Property $k is different");
                 }
             }
             $this->assertTrue(true);
@@ -634,7 +628,7 @@ abstract class qbehaviour_walkthrough_test_base extends question_testcase {
 
         $this->displayoptions = new question_display_options();
         $this->quba = question_engine::make_questions_usage_by_activity('unit_test',
-            get_context_instance(CONTEXT_SYSTEM));
+            context_system::instance());
     }
 
     protected function tearDown() {

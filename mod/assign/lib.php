@@ -31,7 +31,7 @@ defined('MOODLE_INTERNAL') || die();
  * @param mod_assign_mod_form $form
  * @return int The instance id of the new assignment
  */
-function assign_add_instance(stdClass $data, mod_assign_mod_form $form) {
+function assign_add_instance(stdClass $data, mod_assign_mod_form $form = null) {
     global $CFG;
     require_once($CFG->dirroot . '/mod/assign/locallib.php');
 
@@ -83,11 +83,13 @@ function assign_supports($feature) {
         case FEATURE_GROUPMEMBERSONLY:        return true;
         case FEATURE_MOD_INTRO:               return true;
         case FEATURE_COMPLETION_TRACKS_VIEWS: return true;
+        case FEATURE_COMPLETION_HAS_RULES:    return true;
         case FEATURE_GRADE_HAS_GRADE:         return true;
         case FEATURE_GRADE_OUTCOMES:          return true;
         case FEATURE_BACKUP_MOODLE2:          return true;
         case FEATURE_SHOW_DESCRIPTION:        return true;
         case FEATURE_ADVANCED_GRADING:        return true;
+        case FEATURE_PLAGIARISM:              return true;
 
         default: return null;
     }
@@ -111,7 +113,7 @@ function assign_grading_areas_list() {
  * @return void
  */
 function assign_extend_settings_navigation(settings_navigation $settings, navigation_node $navref) {
-    global $PAGE;
+    global $PAGE, $DB;
 
     $cm = $PAGE->cm;
     if (!$cm) {
@@ -142,6 +144,14 @@ function assign_extend_settings_navigation(settings_navigation $settings, naviga
        $node = $navref->add(get_string('downloadall', 'assign'), $link, navigation_node::TYPE_SETTING);
    }
 
+   if (has_capability('mod/assign:revealidentities', $context)) {
+       $assignment = $DB->get_record('assign', array('id'=>$cm->instance), 'blindmarking, revealidentities');
+
+       if ($assignment && $assignment->blindmarking && !$assignment->revealidentities) {
+           $link = new moodle_url('/mod/assign/view.php', array('id' => $cm->id,'action'=>'revealidentities'));
+           $node = $navref->add(get_string('revealidentities', 'assign'), $link, navigation_node::TYPE_SETTING);
+       }
+   }
 }
 
 
@@ -212,16 +222,19 @@ function assign_print_overview($courses, &$htmlarray) {
     // Do assignment_base::isopen() here without loading the whole thing for speed
     foreach ($assignments as $key => $assignment) {
         $time = time();
+        $isopen = false;
         if ($assignment->duedate) {
-            if ($assignment->preventlatesubmissions) {
-                $isopen = ($assignment->allowsubmissionsfromdate <= $time && $time <= $assignment->duedate);
+            $duedate = false;
+            if ($assignment->cutoffdate) {
+                $duedate = $assignment->cutoffdate;
+            }
+            if ($duedate) {
+                $isopen = ($assignment->allowsubmissionsfromdate <= $time && $time <= $duedate);
             } else {
                 $isopen = ($assignment->allowsubmissionsfromdate <= $time);
             }
         }
-        if (empty($isopen) || empty($assignment->duedate)) {
-            $assignmentids[] = $assignment->id;
-        } else {
+        if ($isopen) {
             $assignmentids[] = $assignment->id;
         }
     }
@@ -232,6 +245,9 @@ function assign_print_overview($courses, &$htmlarray) {
     }
 
     $strduedate = get_string('duedate', 'assign');
+    $strcutoffdate = get_string('nosubmissionsacceptedafter', 'assign');
+    $strnolatesubmissions = get_string('nolatesubmissions', 'assign');
+    $strduedateno = get_string('duedateno', 'assign');
     $strduedateno = get_string('duedateno', 'assign');
     $strgraded = get_string('graded', 'assign');
     $strnotgradedyet = get_string('notgradedyet', 'assign');
@@ -260,11 +276,15 @@ function assign_print_overview($courses, &$htmlarray) {
 
 
     // get all user submissions, indexed by assignment id
-    $mysubmissions = $DB->get_records_sql("SELECT a.id AS assignment, a.nosubmissions AS offline, g.timemodified AS timemarked, g.grader AS grader, g.grade AS grade, s.status AS status
+    $mysubmissions = $DB->get_records_sql("SELECT a.id AS assignment, a.nosubmissions AS nosubmissions, g.timemodified AS timemarked, g.grader AS grader, g.grade AS grade, s.status AS status
                             FROM {assign} a LEFT JOIN {assign_grades} g ON g.assignment = a.id AND g.userid = ? LEFT JOIN {assign_submission} s ON s.assignment = a.id AND s.userid = ?
                             AND a.id $sqlassignmentids", array_merge(array($USER->id, $USER->id), $assignmentidparams));
 
     foreach ($assignments as $assignment) {
+        // Do not show assignments that are not open
+        if (!in_array($assignment->id, $assignmentids)) {
+            continue;
+        }
         $str = '<div class="assign overview"><div class="name">'.$strassignment. ': '.
                '<a '.($assignment->visible ? '':' class="dimmed"').
                'title="'.$strassignment.'" href="'.$CFG->wwwroot.
@@ -274,6 +294,13 @@ function assign_print_overview($courses, &$htmlarray) {
             $str .= '<div class="info">'.$strduedate.': '.userdate($assignment->duedate).'</div>';
         } else {
             $str .= '<div class="info">'.$strduedateno.'</div>';
+        }
+        if ($assignment->cutoffdate) {
+            if ($assignment->cutoffdate == $assignment->duedate) {
+                $str .= '<div class="info">'.$strnolatesubmissions.'</div>';
+            } else {
+                $str .= '<div class="info">'.$strcutoffdate.': '.userdate($assignment->cutoffdate).'</div>';
+            }
         }
         $context = context_module::instance($assignment->coursemodule);
         if (has_capability('mod/assign:grade', $context)) {
@@ -296,7 +323,7 @@ function assign_print_overview($courses, &$htmlarray) {
             $str .= '<div class="details">';
             $str .= get_string('mysubmission', 'assign');
             $submission = $mysubmissions[$assignment->id];
-            if ($submission->offline) {
+            if ($submission->nosubmissions) {
                  $str .= get_string('offline', 'assign');
             } else if(!$submission->status || $submission->status == 'draft'){
                  $str .= $strnotsubmittedyet;
@@ -795,7 +822,7 @@ function assign_update_grades($assign, $userid=0, $nullifnone=true) {
  * @param stdClass $context
  * @return array
  */
-function mod_assign_get_file_areas($course, $cm, $context) {
+function assign_get_file_areas($course, $cm, $context) {
     global $CFG;
     require_once($CFG->dirroot . '/mod/assign/locallib.php');
     $areas = array();
@@ -837,7 +864,7 @@ function mod_assign_get_file_areas($course, $cm, $context) {
  * @param string $filename
  * @return object file_info instance or null if not found
  */
-function mod_assign_get_file_info($browser, $areas, $course, $cm, $context, $filearea, $itemid, $filepath, $filename) {
+function assign_get_file_info($browser, $areas, $course, $cm, $context, $filearea, $itemid, $filepath, $filename) {
     global $CFG;
     require_once($CFG->dirroot . '/mod/assign/locallib.php');
 
@@ -933,4 +960,30 @@ function assign_user_outline($course, $user, $coursemodule, $assignment) {
     $result->time = $gradebookgrade->dategraded;
 
     return $result;
+}
+
+/**
+ * Obtains the automatic completion state for this module based on any conditions
+ * in assign settings.
+ *
+ * @param object $course Course
+ * @param object $cm Course-module
+ * @param int $userid User ID
+ * @param bool $type Type of comparison (or/and; can be used as return value if no conditions)
+ * @return bool True if completed, false if not, $type if conditions not set.
+ */
+function assign_get_completion_state($course, $cm, $userid, $type) {
+    global $CFG,$DB;
+    require_once($CFG->dirroot . '/mod/assign/locallib.php');
+
+    $assign = new assign(null, $cm, $course);
+
+    // If completion option is enabled, evaluate it and return true/false.
+    if ($assign->get_instance()->completionsubmit) {
+        $submission = $DB->get_record('assign_submission', array('assignment'=>$assign->get_instance()->id, 'userid'=>$userid), '*', IGNORE_MISSING);
+        return $submission && $submission->status == ASSIGN_SUBMISSION_STATUS_SUBMITTED;
+    } else {
+        // Completion option is not enabled so just return $type.
+        return $type;
+    }
 }

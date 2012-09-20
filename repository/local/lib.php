@@ -63,7 +63,7 @@ class repository_local extends repository {
                 $itemid    = is_null($params['itemid']) ? NULL : clean_param($params['itemid'], PARAM_INT);
                 $filepath  = is_null($params['filepath']) ? NULL : clean_param($params['filepath'], PARAM_PATH);;
                 $filename  = is_null($params['filename']) ? NULL : clean_param($params['filename'], PARAM_FILE);
-                $context = get_context_instance_by_id(clean_param($params['contextid'], PARAM_INT));
+                $context = context::instance_by_id(clean_param($params['contextid'], PARAM_INT));
             }
         } else {
             $itemid   = null;
@@ -74,7 +74,7 @@ class repository_local extends repository {
             if (!empty($this->context)) {
                 list($context, $course, $cm) = get_context_info_array($this->context->id);
                 if (is_object($course)) {
-                    $context = get_context_instance(CONTEXT_COURSE, $course->id);
+                    $context = context_course::instance($course->id);
                 } else {
                     $context = get_system_context();
                 }
@@ -115,7 +115,7 @@ class repository_local extends repository {
      * @return int
      */
     public function supported_returntypes() {
-        return FILE_INTERNAL;
+        return FILE_INTERNAL | FILE_REFERENCE;
     }
 
     /**
@@ -125,6 +125,17 @@ class repository_local extends repository {
      */
     public function has_moodle_files() {
         return true;
+    }
+
+    /**
+     * Return reference file life time
+     *
+     * @param string $ref
+     * @return int
+     */
+    public function get_reference_file_lifetime($ref) {
+        // this should be realtime
+        return 0;
     }
 }
 
@@ -219,6 +230,10 @@ class repository_local_file {
             $node['size'] = $this->fileinfo->get_filesize();
             $node['author'] = $this->fileinfo->get_author();
             $node['license'] = $this->fileinfo->get_license();
+            $node['isref'] = $this->fileinfo->is_external_file();
+            if ($this->fileinfo->get_status() == 666) {
+                $node['originalmissing'] = true;
+            }
             $node['source'] = $encodedpath;
             $node['thumbnail'] = $OUTPUT->pix_url(file_file_icon($this->fileinfo, 90))->out(false);
             $node['icon'] = $OUTPUT->pix_url(file_file_icon($this->fileinfo, 24))->out(false);
@@ -358,7 +373,7 @@ class repository_local_file {
             } else if ($this->fileinfo instanceof file_info_context_coursecat) {
                 // This is a course category. For non-admins we do not display categories
                 $this->skip = empty($CFG->navshowmycoursecategories) &&
-                        !has_capability('moodle/course:update', get_context_instance(CONTEXT_SYSTEM));
+                        !has_capability('moodle/course:update', context_system::instance());
             }
         }
         return $this->skip;

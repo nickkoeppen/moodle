@@ -66,7 +66,7 @@ function callback_weeks_definition() {
  */
 function callback_weeks_get_section_name($course, $section) {
     // We can't add a node without text
-    if (!empty($section->name)) {
+    if ((string)$section->name !== '') {
         // Return the name the user set.
         return format_string($section->name, true, array('context' => context_course::instance($course->id)));
     } else if ($section->section == 0) {
@@ -116,4 +116,25 @@ function format_weeks_get_section_dates($section, $course) {
     $dates->end = $dates->start + $oneweekseconds;
 
     return $dates;
+}
+
+/**
+ * Callback function to do some action after section move
+ *
+ * @param stdClass $course The course entry from DB
+ * @return array This will be passed in ajax respose.
+ */
+function callback_weeks_ajax_section_move($course) {
+    global $COURSE, $PAGE;
+
+    $titles = array();
+    rebuild_course_cache($course->id);
+    $modinfo = get_fast_modinfo($COURSE);
+    $renderer = $PAGE->get_renderer('format_weeks');
+    if ($renderer && ($sections = $modinfo->get_section_info_all())) {
+        foreach ($sections as $number => $section) {
+            $titles[$number] = $renderer->section_title($section, $course);
+        }
+    }
+    return array('sectiontitles' => $titles, 'action' => 'move');
 }

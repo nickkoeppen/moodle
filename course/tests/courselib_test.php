@@ -25,8 +25,42 @@
 
 defined('MOODLE_INTERNAL') || die();
 
+global $CFG;
+require_once($CFG->dirroot.'/course/lib.php');
 
 class courselib_testcase extends advanced_testcase {
+
+    public function test_create_course() {
+        global $DB;
+        $this->resetAfterTest(true);
+        $defaultcategory = $DB->get_field_select('course_categories', "MIN(id)", "parent=0");
+
+        $course = new stdClass();
+        $course->fullname = 'Apu loves Unit Təsts';
+        $course->shortname = 'Spread the lŭve';
+        $course->idnumber = '123';
+        $course->summary = 'Awesome!';
+        $course->summaryformat = FORMAT_PLAIN;
+        $course->format = 'topics';
+        $course->newsitems = 0;
+        $course->numsections = 5;
+        $course->category = $defaultcategory;
+
+        $created = create_course($course);
+        $context = context_course::instance($created->id);
+
+        // Compare original and created.
+        $original = (array) $course;
+        $this->assertEquals($original, array_intersect_key((array) $created, $original));
+
+        // Ensure default section is created.
+        $sectioncreated = $DB->record_exists('course_sections', array('course' => $created->id, 'section' => 0));
+        $this->assertTrue($sectioncreated);
+
+        // Ensure blocks have been associated to the course.
+        $blockcount = $DB->count_records('block_instances', array('parentcontextid' => $context->id));
+        $this->assertGreaterThan(0, $blockcount);
+    }
 
     public function test_reorder_sections() {
         global $DB;
@@ -52,11 +86,21 @@ class courselib_testcase extends advanced_testcase {
         $this->assertEquals($oldsections[5], $neworder[5]);
         $this->assertEquals($oldsections[6], $neworder[6]);
 
+        $neworder = reorder_sections($sections, 4, 2);
+        $neworder = array_keys($neworder);
+        $this->assertEquals($oldsections[0], $neworder[0]);
+        $this->assertEquals($oldsections[1], $neworder[1]);
+        $this->assertEquals($oldsections[2], $neworder[3]);
+        $this->assertEquals($oldsections[3], $neworder[4]);
+        $this->assertEquals($oldsections[4], $neworder[2]);
+        $this->assertEquals($oldsections[5], $neworder[5]);
+        $this->assertEquals($oldsections[6], $neworder[6]);
+
         $neworder = reorder_sections(1, 2, 4);
         $this->assertFalse($neworder);
     }
 
-    public function test_move_section() {
+    public function test_move_section_down() {
         global $DB;
         $this->resetAfterTest(true);
 
@@ -68,6 +112,7 @@ class courselib_testcase extends advanced_testcase {
         }
         ksort($oldsections);
 
+        // Test move section down..
         move_section_to($course, 2, 4);
         $sections = array();
         foreach ($DB->get_records('course_sections', array('course'=>$course->id)) as $section) {
@@ -82,6 +127,77 @@ class courselib_testcase extends advanced_testcase {
         $this->assertEquals($oldsections[4], $sections[3]);
         $this->assertEquals($oldsections[5], $sections[5]);
         $this->assertEquals($oldsections[6], $sections[6]);
+    }
+
+    public function test_move_section_up() {
+        global $DB;
+        $this->resetAfterTest(true);
+
+        $this->getDataGenerator()->create_course(array('numsections'=>5), array('createsections'=>true));
+        $course = $this->getDataGenerator()->create_course(array('numsections'=>10), array('createsections'=>true));
+        $oldsections = array();
+        foreach ($DB->get_records('course_sections', array('course'=>$course->id)) as $section) {
+            $oldsections[$section->section] = $section->id;
+        }
+        ksort($oldsections);
+
+        // Test move section up..
+        move_section_to($course, 6, 4);
+        $sections = array();
+        foreach ($DB->get_records('course_sections', array('course'=>$course->id)) as $section) {
+            $sections[$section->section] = $section->id;
+        }
+        ksort($sections);
+
+        $this->assertEquals($oldsections[0], $sections[0]);
+        $this->assertEquals($oldsections[1], $sections[1]);
+        $this->assertEquals($oldsections[2], $sections[2]);
+        $this->assertEquals($oldsections[3], $sections[3]);
+        $this->assertEquals($oldsections[4], $sections[5]);
+        $this->assertEquals($oldsections[5], $sections[6]);
+        $this->assertEquals($oldsections[6], $sections[4]);
+    }
+
+    public function test_move_section_marker() {
+        global $DB;
+        $this->resetAfterTest(true);
+
+        $this->getDataGenerator()->create_course(array('numsections'=>5), array('createsections'=>true));
+        $course = $this->getDataGenerator()->create_course(array('numsections'=>10), array('createsections'=>true));
+
+        // Set course marker to the section we are going to move..
+        course_set_marker($course->id, 2);
+        // Verify that the course marker is set correctly.
+        $course = $DB->get_record('course', array('id' => $course->id));
+        $this->assertEquals(2, $course->marker);
+
+        // Test move the marked section down..
+        move_section_to($course, 2, 4);
+
+        // Verify that the coruse marker has been moved along with the section..
+        $course = $DB->get_record('course', array('id' => $course->id));
+        $this->assertEquals(4, $course->marker);
+
+        // Test move the marked section up..
+        move_section_to($course, 4, 3);
+
+        // Verify that the course marker has been moved along with the section..
+        $course = $DB->get_record('course', array('id' => $course->id));
+        $this->assertEquals(3, $course->marker);
+
+        // Test moving a non-marked section above the marked section..
+        move_section_to($course, 4, 2);
+
+        // Verify that the course marker has been moved down to accomodate..
+        $course = $DB->get_record('course', array('id' => $course->id));
+        $this->assertEquals(4, $course->marker);
+
+        // Test moving a non-marked section below the marked section..
+        move_section_to($course, 3, 6);
+
+        // Verify that the course marker has been up to accomodate..
+        $course = $DB->get_record('course', array('id' => $course->id));
+        $this->assertEquals(3, $course->marker);
     }
 
     public function test_get_course_display_name_for_list() {

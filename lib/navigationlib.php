@@ -150,7 +150,7 @@ class navigation_node implements renderable {
                 $this->shorttext = $properties['shorttext'];
             }
             if (!array_key_exists('icon', $properties)) {
-                $properties['icon'] = new pix_icon('i/navigationitem', 'moodle');
+                $properties['icon'] = new pix_icon('i/navigationitem', '');
             }
             $this->icon = $properties['icon'];
             if ($this->icon instanceof pix_icon) {
@@ -1131,7 +1131,13 @@ class global_navigation extends navigation_node {
                     $addedcategories[$category->id] = $categoryparent->add($category->name, $url, self::TYPE_CATEGORY, $category->name, $category->id);
 
                     if (!$category->visible) {
-                        if (!has_capability('moodle/category:viewhiddencategories', get_context_instance(CONTEXT_COURSECAT, $category->parent))) {
+                        // Let's decide the context where viewhidden cap checks will happen.
+                        if ($category->parent == '0') {
+                            $contexttocheck = context_system::instance();
+                        } else {
+                            $contexttocheck = context_coursecat::instance($category->parent);
+                        }
+                        if (!has_capability('moodle/category:viewhiddencategories', $contexttocheck)) {
                             $addedcategories[$category->id]->display = false;
                         } else {
                             $addedcategories[$category->id]->hidden = true;
@@ -1230,7 +1236,7 @@ class global_navigation extends navigation_node {
                     $isparent = false;
                     if ($this->useridtouseforparentchecks) {
                         if ($this->useridtouseforparentchecks != $USER->id) {
-                            $usercontext   = get_context_instance(CONTEXT_USER, $this->useridtouseforparentchecks, MUST_EXIST);
+                            $usercontext   = context_user::instance($this->useridtouseforparentchecks, MUST_EXIST);
                             if ($DB->record_exists('role_assignments', array('userid' => $USER->id, 'contextid' => $usercontext->id))
                                     and has_capability('moodle/user:viewdetails', $usercontext)) {
                                 $isparent = true;
@@ -1423,14 +1429,16 @@ class global_navigation extends navigation_node {
         }
 
         // Give the local plugins a chance to include some navigation if they want.
-        foreach (get_list_of_plugins('local') as $plugin) {
-            if (!file_exists($CFG->dirroot.'/local/'.$plugin.'/lib.php')) {
-                continue;
-            }
-            require_once($CFG->dirroot.'/local/'.$plugin.'/lib.php');
-            $function = $plugin.'_extends_navigation';
+        foreach (get_plugin_list_with_file('local', 'lib.php', true) as $plugin => $file) {
+            $function = "local_{$plugin}_extends_navigation";
+            $oldfunction = "{$plugin}_extends_navigation";
             if (function_exists($function)) {
+                // This is the preferred function name as there is less chance of conflicts
                 $function($this);
+            } else if (function_exists($oldfunction)) {
+                // We continue to support the old function name to ensure backwards compatability
+                debugging("Deprecated local plugin navigation callback: Please rename '{$oldfunction}' to '{$function}'. Support for the old callback will be dropped after the release of 2.4", DEBUG_DEVELOPER);
+                $oldfunction($this);
             }
         }
 
@@ -1599,7 +1607,7 @@ class global_navigation extends navigation_node {
                         continue;
                     }
                     context_instance_preload($course);
-                    if (!$course->visible && !is_role_switched($course->id) && !has_capability('moodle/course:viewhiddencourses', get_context_instance(CONTEXT_COURSE, $course->id))) {
+                    if (!$course->visible && !is_role_switched($course->id) && !has_capability('moodle/course:viewhiddencourses', context_course::instance($course->id))) {
                         continue;
                     }
                     $coursenodes[$course->id] = $this->add_course($course);
@@ -1635,7 +1643,7 @@ class global_navigation extends navigation_node {
                             break;
                         }
                         context_instance_preload($course);
-                        if (!$course->visible && !is_role_switched($course->id) && !has_capability('moodle/course:viewhiddencourses', get_context_instance(CONTEXT_COURSE, $course->id))) {
+                        if (!$course->visible && !is_role_switched($course->id) && !has_capability('moodle/course:viewhiddencourses', context_course::instance($course->id))) {
                             continue;
                         }
                         $coursenodes[$course->id] = $this->add_course($course);
@@ -1659,7 +1667,7 @@ class global_navigation extends navigation_node {
                     continue;
                 }
                 context_instance_preload($course);
-                if (!$course->visible && !is_role_switched($course->id) && !has_capability('moodle/course:viewhiddencourses', get_context_instance(CONTEXT_COURSE, $course->id))) {
+                if (!$course->visible && !is_role_switched($course->id) && !has_capability('moodle/course:viewhiddencourses', context_course::instance($course->id))) {
                     continue;
                 }
                 $coursenodes[$course->id] = $this->add_course($course);
@@ -1841,7 +1849,7 @@ class global_navigation extends navigation_node {
             return;
         }
         $url = new moodle_url('/course/category.php', array('id' => $category->id));
-        $context = get_context_instance(CONTEXT_COURSECAT, $category->id);
+        $context = context_coursecat::instance($category->id);
         $categoryname = format_string($category->name, true, array('context' => $context));
         $categorynode = $parent->add($categoryname, $url, self::TYPE_CATEGORY, $categoryname, $category->id);
         if (empty($category->visible)) {
@@ -1923,6 +1931,9 @@ class global_navigation extends navigation_node {
         $activities = array();
 
         foreach ($sections as $key => $section) {
+            // Clone and unset summary to prevent $SESSION bloat (MDL-31802).
+            $sections[$key] = clone($section);
+            unset($sections[$key]->summary);
             $sections[$key]->hasactivites = false;
             if (!array_key_exists($section->section, $modinfo->sections)) {
                 continue;
@@ -2071,7 +2082,7 @@ class global_navigation extends navigation_node {
             }
 
             // Prepare the default name and url for the node
-            $activityname = format_string($activity->name, true, array('context' => get_context_instance(CONTEXT_MODULE, $activity->id)));
+            $activityname = format_string($activity->name, true, array('context' => context_module::instance($activity->id)));
             $action = new moodle_url($activity->url);
 
             // Check if the onclick property is set (puke!)
@@ -2218,7 +2229,7 @@ class global_navigation extends navigation_node {
 
         $iscurrentuser = ($user->id == $USER->id);
 
-        $usercontext = get_context_instance(CONTEXT_USER, $user->id);
+        $usercontext = context_user::instance($user->id);
 
         // Get the course set against the page, by default this will be the site
         $course = $this->page->course;
@@ -2226,11 +2237,11 @@ class global_navigation extends navigation_node {
         if ($course->id != $SITE->id && (!$iscurrentuser || $forceforcontext)) {
             $coursenode = $this->load_course($course);
             $baseargs['course'] = $course->id;
-            $coursecontext = get_context_instance(CONTEXT_COURSE, $course->id);
+            $coursecontext = context_course::instance($course->id);
             $issitecourse = false;
         } else {
             // Load all categories and get the context for the system
-            $coursecontext = get_context_instance(CONTEXT_SYSTEM);
+            $coursecontext = context_system::instance();
             $issitecourse = true;
         }
 
@@ -2239,7 +2250,7 @@ class global_navigation extends navigation_node {
             // If it's the current user the information will go under the profile root node
             $usernode = $this->rootnodes['myprofile'];
             $course = get_site();
-            $coursecontext = get_context_instance(CONTEXT_COURSE, $course->id);
+            $coursecontext = context_course::instance($course->id);
             $issitecourse = true;
         } else {
             if (!$issitecourse) {
@@ -2291,7 +2302,7 @@ class global_navigation extends navigation_node {
         }
 
         // Add blog nodes
-        if (!empty($CFG->bloglevel)) {
+        if (!empty($CFG->enableblogs)) {
             if (!$this->cache->cached('userblogoptions'.$user->id)) {
                 require_once($CFG->dirroot.'/blog/lib.php');
                 // Get all options for the user
@@ -2322,7 +2333,7 @@ class global_navigation extends navigation_node {
             $usernode->add(get_string('messages', 'message'), $url, self::TYPE_SETTING, null, 'messages');
         }
 
-        $context = get_context_instance(CONTEXT_USER, $USER->id);
+        $context = context_user::instance($USER->id);
         if ($iscurrentuser && has_capability('moodle/user:manageownfiles', $context)) {
             $url = new moodle_url('/user/files.php');
             $usernode->add(get_string('myfiles'), $url, self::TYPE_SETTING);
@@ -2394,7 +2405,7 @@ class global_navigation extends navigation_node {
             $userscoursesnode = $usernode->add(get_string('courses'));
 
             foreach ($userscourses as $usercourse) {
-                $usercoursecontext = get_context_instance(CONTEXT_COURSE, $usercourse->id);
+                $usercoursecontext = context_course::instance($usercourse->id);
                 $usercourseshortname = format_string($usercourse->shortname, true, array('context' => $usercoursecontext));
                 $usercoursenode = $userscoursesnode->add($usercourseshortname, new moodle_url('/user/view.php', array('id'=>$user->id, 'course'=>$usercourse->id)), self::TYPE_CONTAINER);
 
@@ -2492,7 +2503,7 @@ class global_navigation extends navigation_node {
             return $this->addedcourses[$course->id];
         }
 
-        $coursecontext = get_context_instance(CONTEXT_COURSE, $course->id);
+        $coursecontext = context_course::instance($course->id);
 
         if ($course->id != $SITE->id && !$course->visible) {
             if (is_role_switched($course->id)) {
@@ -2539,7 +2550,7 @@ class global_navigation extends navigation_node {
         $coursenode = $parent->add($shortname, $url, self::TYPE_COURSE, $shortname, $course->id);
         $coursenode->nodetype = self::NODETYPE_BRANCH;
         $coursenode->hidden = (!$course->visible);
-        $coursenode->title(format_string($course->fullname, true, array('context' => get_context_instance(CONTEXT_COURSE, $course->id))));
+        $coursenode->title(format_string($course->fullname, true, array('context' => context_course::instance($course->id))));
         if (!$forcegeneric) {
             $this->addedcourses[$course->id] = $coursenode;
         }
@@ -2590,7 +2601,7 @@ class global_navigation extends navigation_node {
             }
             $filterselect = clean_param($filterselect, PARAM_INT);
             if (($CFG->bloglevel == BLOG_GLOBAL_LEVEL or ($CFG->bloglevel == BLOG_SITE_LEVEL and (isloggedin() and !isguestuser())))
-               and has_capability('moodle/blog:view', get_context_instance(CONTEXT_SYSTEM))) {
+               and has_capability('moodle/blog:view', context_system::instance())) {
                 $blogsurls = new moodle_url('/blog/index.php', array('courseid' => $filterselect));
                 $participants->add(get_string('blogscourse','blog'), $blogsurls->out());
             }
@@ -2653,9 +2664,9 @@ class global_navigation extends navigation_node {
         $filterselect = 0;
 
         // Blogs
-        if (!empty($CFG->bloglevel)
+        if (!empty($CFG->enableblogs)
           and ($CFG->bloglevel == BLOG_GLOBAL_LEVEL or ($CFG->bloglevel == BLOG_SITE_LEVEL and (isloggedin() and !isguestuser())))
-          and has_capability('moodle/blog:view', get_context_instance(CONTEXT_SYSTEM))) {
+          and has_capability('moodle/blog:view', context_system::instance())) {
             $blogsurls = new moodle_url('/blog/index.php', array('courseid' => $filterselect));
             $coursenode->add(get_string('blogssite','blog'), $blogsurls->out());
         }
@@ -2851,7 +2862,7 @@ class global_navigation_for_ajax extends global_navigation {
             case self::TYPE_COURSE :
                 $course = $DB->get_record('course', array('id' => $this->instanceid), '*', MUST_EXIST);
                 require_course_login($course, true, null, false, true);
-                $this->page->set_context(get_context_instance(CONTEXT_COURSE, $course->id));
+                $this->page->set_context(context_course::instance($course->id));
                 $coursenode = $this->add_course($course);
                 $this->add_course_essentials($coursenode, $course);
                 if ($this->format_display_course_content($course->format)) {
@@ -2865,7 +2876,7 @@ class global_navigation_for_ajax extends global_navigation {
                         WHERE cs.id = ?';
                 $course = $DB->get_record_sql($sql, array($this->instanceid), MUST_EXIST);
                 require_course_login($course, true, null, false, true);
-                $this->page->set_context(get_context_instance(CONTEXT_COURSE, $course->id));
+                $this->page->set_context(context_course::instance($course->id));
                 $coursenode = $this->add_course($course);
                 $this->add_course_essentials($coursenode, $course);
                 $sections = $this->load_course_sections($course, $coursenode);
@@ -2882,7 +2893,7 @@ class global_navigation_for_ajax extends global_navigation {
                 $modinfo = get_fast_modinfo($course);
                 $cm = $modinfo->get_cm($this->instanceid);
                 require_course_login($course, true, $cm, false, true);
-                $this->page->set_context(get_context_instance(CONTEXT_MODULE, $cm->id));
+                $this->page->set_context(context_module::instance($cm->id));
                 $coursenode = $this->load_course($course);
                 if ($course->id == $SITE->id) {
                     $modulenode = $this->load_activity($cm, $course, $coursenode->find($cm->id, self::TYPE_ACTIVITY));
@@ -3308,6 +3319,9 @@ class settings_navigation extends navigation_node {
             $this->add(get_string('returntooriginaluser', 'moodle', fullname($realuser, true)), $url, self::TYPE_SETTING, null, null, new pix_icon('t/left', ''));
         }
 
+        // At this point we give any local plugins the ability to extend/tinker with the navigation settings.
+        $this->load_local_plugin_settings();
+
         foreach ($this->children as $key=>$node) {
             if ($node->nodetype != self::NODETYPE_BRANCH || $node->children->count()===0) {
                 $node->remove();
@@ -3532,7 +3546,7 @@ class settings_navigation extends navigation_node {
         global $CFG;
 
         $course = $this->page->course;
-        $coursecontext = get_context_instance(CONTEXT_COURSE, $course->id);
+        $coursecontext = context_course::instance($course->id);
 
         // note: do not test if enrolled or viewing here because we need the enrol link in Course administration section
 
@@ -3566,7 +3580,7 @@ class settings_navigation extends navigation_node {
             // Add the module chooser toggle
             $modchoosertoggleurl = clone($baseurl);
             if ($this->page->user_is_editing() && course_ajax_enabled($course)) {
-                if ($usemodchooser = get_user_preferences('usemodchooser', 1)) {
+                if ($usemodchooser = get_user_preferences('usemodchooser', $CFG->modchooserdefault)) {
                     $modchoosertogglestring = get_string('modchooserdisable', 'moodle');
                     $modchoosertoggleurl->param('modchooser', 'off');
                 } else {
@@ -4009,13 +4023,13 @@ class settings_navigation extends navigation_node {
             $course = $SITE;
         }
 
-        $coursecontext = get_context_instance(CONTEXT_COURSE, $course->id);   // Course context
+        $coursecontext = context_course::instance($course->id);   // Course context
         $systemcontext   = get_system_context();
         $currentuser = ($USER->id == $userid);
 
         if ($currentuser) {
             $user = $USER;
-            $usercontext = get_context_instance(CONTEXT_USER, $user->id);       // User context
+            $usercontext = context_user::instance($user->id);       // User context
         } else {
             $select = context_helper::get_preload_record_columns_sql('ctx');
             $sql = "SELECT u.*, $select
@@ -4030,7 +4044,7 @@ class settings_navigation extends navigation_node {
             context_helper::preload_from_record($user);
 
             // Check that the user can view the profile
-            $usercontext = get_context_instance(CONTEXT_USER, $user->id); // User context
+            $usercontext = context_user::instance($user->id); // User context
             $canviewuser = has_capability('moodle/user:viewdetails', $usercontext);
 
             if ($course->id == $SITE->id) {
@@ -4188,10 +4202,10 @@ class settings_navigation extends navigation_node {
         }
 
         // Blogs
-        if ($currentuser && !empty($CFG->bloglevel)) {
+        if ($currentuser && !empty($CFG->enableblogs)) {
             $blog = $usersetting->add(get_string('blogs', 'blog'), null, navigation_node::TYPE_CONTAINER, null, 'blogs');
             $blog->add(get_string('preferences', 'blog'), new moodle_url('/blog/preferences.php'), navigation_node::TYPE_SETTING);
-            if (!empty($CFG->useexternalblogs) && $CFG->maxexternalblogsperuser > 0 && has_capability('moodle/blog:manageexternal', get_context_instance(CONTEXT_SYSTEM))) {
+            if (!empty($CFG->useexternalblogs) && $CFG->maxexternalblogsperuser > 0 && has_capability('moodle/blog:manageexternal', context_system::instance())) {
                 $blog->add(get_string('externalblogs', 'blog'), new moodle_url('/blog/external_blogs.php'), navigation_node::TYPE_SETTING);
                 $blog->add(get_string('addnewexternalblog', 'blog'), new moodle_url('/blog/external_blog_edit.php'), navigation_node::TYPE_SETTING);
             }
@@ -4332,7 +4346,7 @@ class settings_navigation extends navigation_node {
         global $SITE, $CFG;
 
         $course = clone($SITE);
-        $coursecontext = get_context_instance(CONTEXT_COURSE, $course->id);   // Course context
+        $coursecontext = context_course::instance($course->id);   // Course context
 
         $frontpage = $this->add(get_string('frontpagesettings'), null, self::TYPE_SETTING, null, 'frontpage');
         if ($forceopen) {
@@ -4390,6 +4404,17 @@ class settings_navigation extends navigation_node {
             $frontpage->add(get_string('sitelegacyfiles'), $url, self::TYPE_SETTING, null, null, new pix_icon('i/files', ''));
         }
         return $frontpage;
+    }
+
+    /**
+     * This function gives local plugins an opportunity to modify the settings navigation.
+     */
+    protected function load_local_plugin_settings() {
+        // Get all local plugins with an extend_settings_navigation function in their lib.php file
+        foreach (get_plugin_list_with_function('local', 'extends_settings_navigation') as $function) {
+            // Call each function providing this (the settings navigation) and the current context.
+            $function($this, $this->context);
+        }
     }
 
     /**

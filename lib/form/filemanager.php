@@ -69,7 +69,7 @@ class MoodleQuickForm_filemanager extends HTML_QuickForm_element {
             }
         }
         if (!empty($options['maxbytes'])) {
-            $this->_options['maxbytes'] = get_max_upload_file_size($CFG->maxbytes, $options['maxbytes']);
+            $this->_options['maxbytes'] = get_user_max_upload_file_size($PAGE->context, $CFG->maxbytes, $options['maxbytes']);
         }
         if (empty($options['return_types'])) {
             $this->_options['return_types'] = (FILE_INTERNAL | FILE_REFERENCE);
@@ -129,8 +129,8 @@ class MoodleQuickForm_filemanager extends HTML_QuickForm_element {
      * @param int $maxbytes file size
      */
     function setMaxbytes($maxbytes) {
-        global $CFG;
-        $this->_options['maxbytes'] = get_max_upload_file_size($CFG->maxbytes, $maxbytes);
+        global $CFG, $PAGE;
+        $this->_options['maxbytes'] = get_user_max_upload_file_size($PAGE->context, $CFG->maxbytes, $maxbytes);
     }
 
     /**
@@ -167,19 +167,6 @@ class MoodleQuickForm_filemanager extends HTML_QuickForm_element {
      */
     function setMaxfiles($num) {
         $this->_options['maxfiles'] = $num;
-    }
-
-    /**
-     * Sets help button for filemanager
-     *
-     * @param mixed $helpbuttonargs arguments to create help button
-     * @param string $function name of the callback function
-     * @deprecated since Moodle 2.0. Please do not call this function any more.
-     * @todo MDL-31047 this api will be removed.
-     * @see MoodleQuickForm::setHelpButton()
-     */
-    function setHelpButton($helpbuttonargs, $function='helpbutton'){
-        debugging('component setHelpButton() is not used any more, please use $mform->setHelpButton() instead');
     }
 
     /**
@@ -334,7 +321,7 @@ class form_filemanager implements renderable {
         $this->options = file_get_drafarea_files($options->itemid, '/');
 
         // calculate file count
-        $usercontext = get_context_instance(CONTEXT_USER, $USER->id);
+        $usercontext = context_user::instance($USER->id);
         $files = $fs->get_area_files($usercontext->id, 'user', 'draft', $options->itemid, 'id', false);
         $filecount = count($files);
         $this->options->filecount = $filecount;
@@ -354,7 +341,7 @@ class form_filemanager implements renderable {
         if (!empty($this->options->maxbytes) && $this->options->maxbytes > 0) {
             $maxbytes = $this->options->maxbytes;
         }
-        $this->options->maxbytes = get_max_upload_file_size($CFG->maxbytes, $coursebytes, $maxbytes);
+        $this->options->maxbytes = get_user_max_upload_file_size($context, $CFG->maxbytes, $coursebytes, $maxbytes);
 
         // building file picker options
         $params = new stdClass();

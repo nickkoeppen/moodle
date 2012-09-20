@@ -1,5 +1,5 @@
 <?php
-// This file is part of Book module for Moodle - http://moodle.org/
+// This file is part of Moodle - http://moodle.org/
 //
 // Moodle is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -114,9 +114,9 @@ $strbook  = get_string('modulename', 'mod_book');
 $strtoc   = get_string('toc', 'mod_book');
 
 // prepare header
-$PAGE->set_title(format_string($book->name));
-$PAGE->add_body_class('mod_book');
-$PAGE->set_heading(format_string($course->fullname));
+$pagetitle = $book->name . ": " . $chapter->title;
+$PAGE->set_title($pagetitle);
+$PAGE->set_heading($course->fullname);
 
 book_add_fake_block($chapters, $chapter, $book, $cm, $edit);
 
@@ -181,11 +181,12 @@ if (!$book->customtitles) {
     $hidden = $chapter->hidden ? 'dimmed_text' : '';
     if (!$chapter->subchapter) {
         $currtitle = book_get_chapter_title($chapter->id, $chapters, $book, $context);
-        echo '<p class="book_chapter_title '.$hidden.'">'.$currtitle.'</p>';
+        echo $OUTPUT->heading($currtitle, 2, array('class' => 'book_chapter_title '.$hidden));
     } else {
         $currtitle = book_get_chapter_title($chapters[$chapter->id]->parent, $chapters, $book, $context);
         $currsubtitle = book_get_chapter_title($chapter->id, $chapters, $book, $context);
-        echo '<p class="book_chapter_title '.$hidden.'">'.$currtitle.'<br />'.$currsubtitle.'</p>';
+        echo $OUTPUT->heading($currtitle, 2, array('class' => 'book_chapter_title '.$hidden));
+        echo $OUTPUT->heading($currsubtitle, 3, array('class' => 'book_chapter_title '.$hidden));
     }
 }
 $chaptertext = file_rewrite_pluginfile_urls($chapter->content, 'pluginfile.php', $context->id, 'mod_book', 'chapter', $chapter->id);

@@ -44,11 +44,6 @@ if (!function_exists('iconv')) {
     echo 'Moodle requires the iconv PHP extension. Please install or enable the iconv extension.';
     die();
 }
-if (iconv('UTF-8', 'UTF-8//IGNORE', 'abc') !== 'abc') {
-    // known to be broken in mid-2011 MAMP installations
-    echo 'Broken iconv PHP extension detected, installation/upgrade can not continue.';
-    die();
-}
 
 define('NO_OUTPUT_BUFFERING', true);
 
@@ -109,10 +104,6 @@ if (!$version or !$release) {
     print_error('withoutversion', 'debug'); // without version, stop
 }
 
-// Turn off xmlstrictheaders during upgrade.
-$origxmlstrictheaders = !empty($CFG->xmlstrictheaders);
-$CFG->xmlstrictheaders = false;
-
 if (!core_tables_exist()) {
     $PAGE->set_pagelayout('maintenance');
     $PAGE->set_popup_notification_allowed(false);
@@ -152,6 +143,20 @@ if (!core_tables_exist()) {
         die();
     }
 
+    // check plugin dependencies
+    $failed = array();
+    if (!plugin_manager::instance()->all_plugins_ok($version, $failed)) {
+        $PAGE->navbar->add(get_string('pluginscheck', 'admin'));
+        $PAGE->set_title($strinstallation);
+        $PAGE->set_heading($strinstallation . ' - Moodle ' . $CFG->target_release);
+
+        $output = $PAGE->get_renderer('core', 'admin');
+        $url = new moodle_url('/admin/index.php', array('agreelicense' => 1, 'confirmrelease' => 1, 'lang' => $CFG->lang));
+        echo $output->unsatisfied_dependencies_page($version, $failed, $url);
+        die();
+    }
+    unset($failed);
+
     //TODO: add a page with list of non-standard plugins here
 
     $strdatabasesetup = get_string('databasesetup');
@@ -180,7 +185,7 @@ if (!core_tables_exist()) {
 // and upgrade if possible.
 
 $stradministration = get_string('administration');
-$PAGE->set_context(get_context_instance(CONTEXT_SYSTEM));
+$PAGE->set_context(context_system::instance());
 
 if (empty($CFG->version)) {
     print_error('missingconfigversion', 'debug');
@@ -238,6 +243,15 @@ if ($version > $CFG->version) {  // upgrade
 
         $reloadurl = new moodle_url('/admin/index.php', array('confirmupgrade' => 1, 'confirmrelease' => 1));
 
+        // check plugin dependencies first
+        $failed = array();
+        if (!plugin_manager::instance()->all_plugins_ok($version, $failed)) {
+            $output = $PAGE->get_renderer('core', 'admin');
+            echo $output->unsatisfied_dependencies_page($version, $failed, $reloadurl);
+            die();
+        }
+        unset($failed);
+
         if ($fetchupdates) {
             // no sesskey support guaranteed here
             if (empty($CFG->disableupdatenotifications)) {
@@ -290,6 +304,16 @@ if (moodle_needs_upgrading()) {
             }
 
             $output = $PAGE->get_renderer('core', 'admin');
+
+            // check plugin dependencies first
+            $failed = array();
+            if (!plugin_manager::instance()->all_plugins_ok($version, $failed)) {
+                echo $output->unsatisfied_dependencies_page($version, $failed, $PAGE->url);
+                die();
+            }
+            unset($failed);
+
+            // dependencies check passed, let's rock!
             echo $output->upgrade_plugin_check_page(plugin_manager::instance(), available_update_checker::instance(),
                     $version, $showallplugins,
                     new moodle_url($PAGE->url),
@@ -352,13 +376,9 @@ if (during_initial_install()) {
     upgrade_finished('upgradesettings.php');
 }
 
-// Turn xmlstrictheaders back on now.
-$CFG->xmlstrictheaders = $origxmlstrictheaders;
-unset($origxmlstrictheaders);
-
 // Check for valid admin user - no guest autologin
 require_login(0, false);
-$context = get_context_instance(CONTEXT_SYSTEM);
+$context = context_system::instance();
 require_capability('moodle/site:config', $context);
 
 // check that site is properly customized
@@ -401,6 +421,10 @@ $availableupdates = $updateschecker->get_update_info('core',
     array('minmaturity' => $CFG->updateminmaturity, 'notifybuilds' => $CFG->updatenotifybuilds));
 $availableupdatesfetch = $updateschecker->get_last_timefetched();
 
+$buggyiconvnomb = (!function_exists('mb_convert_encoding') and @iconv('UTF-8', 'UTF-8//IGNORE', '100'.chr(130).'€') !== '100€');
+//check if the site is registered on Moodle.org
+$registered = $DB->count_records('registration_hubs', array('huburl' => HUB_MOODLEORGHUBURL, 'confirmed' => 1));
+
 admin_externalpage_setup('adminnotifications');
 
 if ($fetchupdates) {
@@ -411,4 +435,5 @@ if ($fetchupdates) {
 
 $output = $PAGE->get_renderer('core', 'admin');
 echo $output->admin_notifications_page($maturity, $insecuredataroot, $errorsdisplayed,
-        $cronoverdue, $dbproblems, $maintenancemode, $availableupdates, $availableupdatesfetch);
+        $cronoverdue, $dbproblems, $maintenancemode, $availableupdates, $availableupdatesfetch, $buggyiconvnomb,
+        $registered);

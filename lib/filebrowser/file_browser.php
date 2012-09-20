@@ -73,7 +73,7 @@ class file_browser {
      */
     public function get_file_info($context = NULL, $component = NULL, $filearea = NULL, $itemid = NULL, $filepath = NULL, $filename = NULL) {
         if (!$context) {
-            $context = get_context_instance(CONTEXT_SYSTEM);
+            $context = context_system::instance();
         }
         switch ($context->contextlevel) {
             case CONTEXT_SYSTEM:
@@ -93,6 +93,7 @@ class file_browser {
 
     /**
      * Returns info about the files at System context
+     * @todo MDL-33372 - Provide a way of displaying recent files for blog entries.
      *
      * @param object $context context object
      * @param string $component component

@@ -165,9 +165,9 @@ class repository_alfresco extends repository {
             $file_filter = "{http://www.alfresco.org/model/content/1.0}content";
 
             // top level sites folder
-            $sites_filter = "{http://www.alfresco.org/model/content/1.0}sites";
+            $sites_filter = "{http://www.alfresco.org/model/site/1.0}sites";
             // individual site
-            $site_filter = "{http://www.alfresco.org/model/content/1.0}site";
+            $site_filter = "{http://www.alfresco.org/model/site/1.0}site";
 
             foreach ($this->current_node->children as $child)
             {
@@ -202,11 +202,7 @@ class repository_alfresco extends repository {
     public function get_file($uuid, $file = '') {
         $node = $this->user_session->getNode($this->store, $uuid);
         $url = $this->get_url($node);
-        $path = $this->prepare_file($file);
-        $fp = fopen($path, 'w');
-        $c = new curl;
-        $c->download(array(array('url'=>$url, 'file'=>$fp)));
-        return array('path'=>$path, 'url'=>$url);
+        return parent::get_file($url, $file);
     }
 
     /**
@@ -270,7 +266,7 @@ class repository_alfresco extends repository {
      *
      * @return bool
      */
-    public function instance_config_form($mform) {
+    public static function instance_config_form($mform) {
         if (!class_exists('SoapClient')) {
             $mform->addElement('static', null, get_string('notice'), get_string('soapmustbeenabled', 'repository_alfresco'));
             return false;

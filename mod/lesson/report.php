@@ -38,7 +38,7 @@ $lesson = new lesson($DB->get_record('lesson', array('id' => $cm->instance), '*'
 
 require_login($course, false, $cm);
 
-$context = get_context_instance(CONTEXT_MODULE, $cm->id);
+$context = context_module::instance($cm->id);
 require_capability('mod/lesson:manage', $context);
 
 $ufields = user_picture::fields('u'); // These fields are enough
@@ -94,7 +94,7 @@ if (! $times = $DB->get_records('lesson_timer', array('lessonid' => $lesson->id)
 }
 
 if ($nothingtodisplay) {
-    echo $lessonoutput->header($lesson, $cm, $action);
+    echo $lessonoutput->header($lesson, $cm, $action, false, null, get_string('nolessonattempts', 'lesson'));
     echo $OUTPUT->notification(get_string('nolessonattempts', 'lesson'));
     echo $OUTPUT->footer();
     exit();
@@ -160,9 +160,9 @@ if ($action === 'delete') {
     /**************************************************************************
     this action is for default view and overview view
     **************************************************************************/
-    echo $lessonoutput->header($lesson, $cm, $action);
+    echo $lessonoutput->header($lesson, $cm, $action, false, null, get_string('overview', 'lesson'));
 
-    $course_context = get_context_instance(CONTEXT_COURSE, $course->id);
+    $course_context = context_course::instance($course->id);
     if (has_capability('gradereport/grader:view', $course_context) && has_capability('moodle/grade:viewall', $course_context)) {
         $seeallgradeslink = new moodle_url('/grade/report/grader/index.php', array('id'=>$course->id));
         $seeallgradeslink = html_writer::link($seeallgradeslink, get_string('seeallcoursegrades', 'grades'));
@@ -314,6 +314,7 @@ if ($action === 'delete') {
     if (has_capability('mod/lesson:edit', $context)) {
         $checklinks  = '<a href="javascript: checkall();">'.get_string('selectall').'</a> / ';
         $checklinks .= '<a href="javascript: checknone();">'.get_string('deselectall').'</a>';
+        $checklinks .= html_writer::label('action', 'menuaction', false, array('class' => 'accesshide'));
         $checklinks .= html_writer::select(array('delete' => get_string('deleteselected')), 'action', 0, array(''=>'choosedots'), array('id'=>'actionid'));
         $PAGE->requires->js_init_call('M.util.init_select_autosubmit', array('theform', 'actionid', ''));
         echo $OUTPUT->box($checklinks, 'center');
@@ -375,9 +376,9 @@ if ($action === 'delete') {
     4.  Print out the object which contains all the try info
 
 **************************************************************************/
-    echo $lessonoutput->header($lesson, $cm, $action);
+    echo $lessonoutput->header($lesson, $cm, $action, false, null, get_string('detailedstats', 'lesson'));
 
-    $course_context = get_context_instance(CONTEXT_COURSE, $course->id);
+    $course_context = context_course::instance($course->id);
     if (has_capability('gradereport/grader:view', $course_context) && has_capability('moodle/grade:viewall', $course_context)) {
         $seeallgradeslink = new moodle_url('/grade/report/grader/index.php', array('id'=>$course->id));
         $seeallgradeslink = html_writer::link($seeallgradeslink, get_string('seeallcoursegrades', 'grades'));
@@ -439,7 +440,7 @@ if ($action === 'delete') {
         $page = $lessonpages[$pageid];
         $answerpage = new stdClass;
         $data ='';
-        
+
         $answerdata = new stdClass;
         // Set some defaults for the answer data.
         $answerdata->score = NULL;
@@ -460,7 +461,7 @@ if ($action === 'delete') {
         if (empty($userid)) {
             // there is no userid, so set these vars and display stats.
             $answerpage->grayout = 0;
-            $useranswer = NULL;    
+            $useranswer = NULL;
         } elseif ($useranswers = $DB->get_records("lesson_attempts",array("lessonid"=>$lesson->id, "userid"=>$userid, "retry"=>$try,"pageid"=>$page->id), "timeseen")) {
             // get the user's answer for this page
             // need to find the right one

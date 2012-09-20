@@ -53,6 +53,7 @@ function workshop_supports($feature) {
         case FEATURE_COMPLETION_TRACKS_VIEWS:
             return true;
         case FEATURE_SHOW_DESCRIPTION:  return true;
+        case FEATURE_PLAGIARISM:        return true;
         default:                        return null;
     }
 }
@@ -88,7 +89,7 @@ function workshop_add_instance(stdclass $workshop) {
     // we need to use context now, so we need to make sure all needed info is already in db
     $cmid = $workshop->coursemodule;
     $DB->set_field('course_modules', 'instance', $workshop->id, array('id' => $cmid));
-    $context = get_context_instance(CONTEXT_MODULE, $cmid);
+    $context = context_module::instance($cmid);
 
     // process the custom wysiwyg editors
     if ($draftitemid = $workshop->instructauthorseditor['itemid']) {
@@ -141,7 +142,7 @@ function workshop_update_instance(stdclass $workshop) {
     // todo - if maximum grades are being changed, we should probably recalculate or invalidate them
 
     $DB->update_record('workshop', $workshop);
-    $context = get_context_instance(CONTEXT_MODULE, $workshop->coursemodule);
+    $context = context_module::instance($workshop->coursemodule);
 
     // process the custom wysiwyg editors
     if ($draftitemid = $workshop->instructauthorseditor['itemid']) {
@@ -405,7 +406,7 @@ function workshop_print_recent_activity($course, $viewfullnames, $timestart) {
             }
         }
 
-        $context = get_context_instance(CONTEXT_MODULE, $cm->id);
+        $context = context_module::instance($cm->id);
         $groupmode = groups_get_activity_groupmode($cm, $course);
 
         if ($activity->submissionmodified > $timestart and empty($submissions[$activity->submissionid])) {
@@ -630,7 +631,7 @@ function workshop_get_recent_mod_activity(&$activities, &$index, $timestart, $co
     $rs = $DB->get_recordset_sql($sql, $params);
 
     $groupmode       = groups_get_activity_groupmode($cm, $course);
-    $context         = get_context_instance(CONTEXT_MODULE, $cm->id);
+    $context         = context_module::instance($cm->id);
     $grader          = has_capability('moodle/grade:viewall', $context);
     $accessallgroups = has_capability('moodle/site:accessallgroups', $context);
     $viewfullnames   = has_capability('moodle/site:viewfullnames', $context);
@@ -1310,11 +1311,6 @@ function workshop_get_file_info($browser, $areas, $course, $cm, $context, $filea
     /** @var array internal cache for author names */
     static $submissionauthors = array();
 
-    // this is enforced by {@link file_info_context_course} currently
-    if (!has_capability('moodle/course:managefiles', $context)) {
-        return null;
-    }
-
     $fs = get_file_storage();
 
     if ($filearea === 'submission_content' or $filearea === 'submission_attachment') {
@@ -1361,6 +1357,12 @@ function workshop_get_file_info($browser, $areas, $course, $cm, $context, $filea
                 // not found
                 return null;
             }
+        }
+
+        // Checks to see if the user can manage files or is the owner.
+        // TODO MDL-33805 - Do not use userid here and move the capability check above.
+        if (!has_capability('moodle/course:managefiles', $context) && $storedfile->get_userid() != $USER->id) {
+            return null;
         }
 
         // let us display the author's name instead of itemid (submission id)
@@ -1432,7 +1434,7 @@ function workshop_get_file_info($browser, $areas, $course, $cm, $context, $filea
 function workshop_extend_navigation(navigation_node $navref, stdclass $course, stdclass $module, cm_info $cm) {
     global $CFG;
 
-    if (has_capability('mod/workshop:submit', get_context_instance(CONTEXT_MODULE, $cm->id))) {
+    if (has_capability('mod/workshop:submit', context_module::instance($cm->id))) {
         $url = new moodle_url('/mod/workshop/submission.php', array('cmid' => $cm->id));
         $mysubmission = $navref->add(get_string('mysubmission', 'workshop'), $url);
         $mysubmission->mainnavonly = true;

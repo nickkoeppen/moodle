@@ -320,6 +320,8 @@ function upgrade_stale_php_files_present() {
     global $CFG;
 
     $someexamplesofremovedfiles = array(
+        // removed in 2.4dev
+        '/admin/tool/unittest/simpletestlib.php',
         // removed in 2.3dev
         '/lib/minify/builder/',
         // removed in 2.2dev
@@ -1764,3 +1766,119 @@ function admin_mnet_method_profile(Zend_Server_Reflection_Function_Abstract $fun
     }
     return $profile;
 }
+
+
+/**
+ * This function finds duplicate records (based on combinations of fields that should be unique)
+ * and then progamatically generated a "most correct" version of the data, update and removing
+ * records as appropriate
+ *
+ * Thanks to Dan Marsden for help
+ *
+ * @param   string  $table      Table name
+ * @param   array   $uniques    Array of field names that should be unique
+ * @param   array   $fieldstocheck  Array of fields to generate "correct" data from (optional)
+ * @return  void
+ */
+function upgrade_course_completion_remove_duplicates($table, $uniques, $fieldstocheck = array()) {
+    global $DB;
+
+    // Find duplicates
+    $sql_cols = implode(', ', $uniques);
+
+    $sql = "SELECT {$sql_cols} FROM {{$table}} GROUP BY {$sql_cols} HAVING (count(id) > 1)";
+    $duplicates = $DB->get_recordset_sql($sql, array());
+
+    // Loop through duplicates
+    foreach ($duplicates as $duplicate) {
+        $pointer = 0;
+
+        // Generate SQL for finding records with these duplicate uniques
+        $sql_select = implode(' = ? AND ', $uniques).' = ?'; // builds "fieldname = ? AND fieldname = ?"
+        $uniq_values = array();
+        foreach ($uniques as $u) {
+            $uniq_values[] = $duplicate->$u;
+        }
+
+        $sql_order = implode(' DESC, ', $uniques).' DESC'; // builds "fieldname DESC, fieldname DESC"
+
+        // Get records with these duplicate uniques
+        $records = $DB->get_records_select(
+            $table,
+            $sql_select,
+            $uniq_values,
+            $sql_order
+        );
+
+        // Loop through and build a "correct" record, deleting the others
+        $needsupdate = false;
+        $origrecord = null;
+        foreach ($records as $record) {
+            $pointer++;
+            if ($pointer === 1) { // keep 1st record but delete all others.
+                $origrecord = $record;
+            } else {
+                // If we have fields to check, update original record
+                if ($fieldstocheck) {
+                    // we need to keep the "oldest" of all these fields as the valid completion record.
+                    // but we want to ignore null values
+                    foreach ($fieldstocheck as $f) {
+                        if ($record->$f && (($origrecord->$f > $record->$f) || !$origrecord->$f)) {
+                            $origrecord->$f = $record->$f;
+                            $needsupdate = true;
+                        }
+                    }
+                }
+                $DB->delete_records($table, array('id' => $record->id));
+            }
+        }
+        if ($needsupdate || isset($origrecord->reaggregate)) {
+            // If this table has a reaggregate field, update to force recheck on next cron run
+            if (isset($origrecord->reaggregate)) {
+                $origrecord->reaggregate = time();
+            }
+            $DB->update_record($table, $origrecord);
+        }
+    }
+}
+
+/**
+ * Find questions missing an existing category and associate them with
+ * a category which purpose is to gather them.
+ *
+ * @return void
+ */
+function upgrade_save_orphaned_questions() {
+    global $DB;
+
+    // Looking for orphaned questions
+    $orphans = $DB->record_exists_select('question',
+            'NOT EXISTS (SELECT 1 FROM {question_categories} WHERE {question_categories}.id = {question}.category)');
+    if (!$orphans) {
+        return;
+    }
+
+    // Generate a unique stamp for the orphaned questions category, easier to identify it later on
+    $uniquestamp = "unknownhost+120719170400+orphan";
+    $systemcontext = context_system::instance();
+
+    // Create the orphaned category at system level
+    $cat = $DB->get_record('question_categories', array('stamp' => $uniquestamp,
+            'contextid' => $systemcontext->id));
+    if (!$cat) {
+        $cat = new stdClass();
+        $cat->parent = 0;
+        $cat->contextid = $systemcontext->id;
+        $cat->name = get_string('orphanedquestionscategory', 'question');
+        $cat->info = get_string('orphanedquestionscategoryinfo', 'question');
+        $cat->sortorder = 999;
+        $cat->stamp = $uniquestamp;
+        $cat->id = $DB->insert_record("question_categories", $cat);
+    }
+
+    // Set a category to those orphans
+    $params = array('catid' => $cat->id);
+    $DB->execute('UPDATE {question} SET category = :catid WHERE NOT EXISTS
+            (SELECT 1 FROM {question_categories} WHERE {question_categories}.id = {question}.category)', $params);
+}
+
